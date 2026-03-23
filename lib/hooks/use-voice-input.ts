@@ -13,6 +13,7 @@ export function useVoiceInput({ locale, onResult, onError }: VoiceInputOptions) 
   const [isSupported, setIsSupported] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false);
 
   useEffect(() => {
     setIsSupported(
@@ -21,8 +22,22 @@ export function useVoiceInput({ locale, onResult, onError }: VoiceInputOptions) 
     );
   }, []);
 
+  const stopListening = useCallback(() => {
+    isListeningRef.current = false;
+    setIsListening(false);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch { /* ignore */ }
+      recognitionRef.current = null;
+    }
+  }, []);
+
   const startListening = useCallback(() => {
-    if (!isSupported) return;
+    if (!isSupported || isListeningRef.current) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -33,35 +48,52 @@ export function useVoiceInput({ locale, onResult, onError }: VoiceInputOptions) 
     recognition.lang = locale === "ru" ? "ru-RU" : "en-US";
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
+    recognition.continuous = false;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       const text: string = event.results[0]?.[0]?.transcript ?? "";
-      if (text) onResult(text);
+      if (text && isListeningRef.current) onResult(text);
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onerror = (event: any) => {
-      onError?.(event.error as string);
+      if (event.error !== "aborted") {
+        onError?.(event.error as string);
+      }
+      isListeningRef.current = false;
       setIsListening(false);
+      recognitionRef.current = null;
     };
 
-    recognition.onend = () => setIsListening(false);
+    recognition.onend = () => {
+      isListeningRef.current = false;
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    isListeningRef.current = true;
     setIsListening(true);
+
+    try {
+      recognition.start();
+    } catch {
+      isListeningRef.current = false;
+      setIsListening(false);
+      recognitionRef.current = null;
+    }
   }, [isSupported, locale, onResult, onError]);
 
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-  }, []);
-
   const toggle = useCallback(() => {
-    if (isListening) stopListening();
+    if (isListeningRef.current) stopListening();
     else startListening();
-  }, [isListening, startListening, stopListening]);
+  }, [startListening, stopListening]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { stopListening(); };
+  }, [stopListening]);
 
   return { isListening, isSupported, toggle };
 }

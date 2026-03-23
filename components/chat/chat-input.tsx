@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, KeyboardEvent } from "react";
 import { motion } from "framer-motion";
-import { Send, Paperclip } from "lucide-react";
+import { Send, Paperclip, Mic, MicOff } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 interface ChatInputProps {
@@ -12,6 +12,10 @@ interface ChatInputProps {
   onFileAttach?: () => void;
   isLoading?: boolean;
   disabled?: boolean;
+  // Voice props
+  isListening?: boolean;
+  voiceSupported?: boolean;
+  onVoiceToggle?: () => void;
 }
 
 export function ChatInput({
@@ -21,6 +25,9 @@ export function ChatInput({
   onFileAttach,
   isLoading = false,
   disabled = false,
+  isListening = false,
+  voiceSupported = false,
+  onVoiceToggle,
 }: ChatInputProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,13 +69,30 @@ export function ChatInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={t("chat.inputPlaceholder")}
+          placeholder={isListening ? (t("chat.inputPlaceholder").includes("Опиш") ? "Слушаю..." : "Listening...") : t("chat.inputPlaceholder")}
           rows={1}
           disabled={isLoading || disabled}
           // font-size >= 16px prevents iOS auto-zoom on focus
           style={{ fontSize: "16px" }}
           className="max-h-[140px] flex-1 resize-none bg-transparent py-1 text-slate-700 placeholder-slate-400 outline-none dark:text-slate-200 dark:placeholder-slate-500"
         />
+
+        {/* Mic button — inside input row */}
+        {voiceSupported && onVoiceToggle && (
+          <button
+            type="button"
+            onClick={onVoiceToggle}
+            disabled={isLoading || disabled}
+            title={isListening ? "Остановить" : "Голосовой ввод"}
+            className={`mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
+              isListening
+                ? "bg-red-100 text-red-500 animate-pulse dark:bg-red-900/40"
+                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+            } disabled:opacity-40`}
+          >
+            {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
+        )}
 
         <motion.button
           type="button"

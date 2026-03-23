@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown, FileDown, Mic, MicOff } from "lucide-react";
+import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown, FileDown, Volume2, VolumeX } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import { ChatMessageBubble } from "./chat-message";
 import { ContextPanel } from "./context-panel";
@@ -11,6 +11,7 @@ import { ChatSidebar, MobileSidebar } from "./chat-sidebar";
 import { useChatStore, selectApiMessages } from "@/lib/store/chat";
 import { useI18n } from "@/lib/i18n";
 import { useVoiceInput } from "@/lib/hooks/use-voice-input";
+import { useSpeechOutput } from "@/lib/hooks/use-speech-output";
 import { exportChatToPdf } from "@/lib/export/chat-pdf";
 import type { ChatResponse } from "@/lib/ai/chat-types";
 
@@ -33,10 +34,18 @@ export function ChatShell() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  const [voiceMode, setVoiceMode] = useState(false);
+  const { speak: speakTTS, stop: stopTTS } = useSpeechOutput();
+
   // Voice input
   const { isListening, isSupported: voiceSupported, toggle: toggleVoice } = useVoiceInput({
     locale,
-    onResult: (text) => setInput((prev) => prev ? `${prev} ${text}` : text),
+    onResult: (text) => {
+      if (text.trim()) {
+        setInput("");
+        sendMessage(text);
+      }
+    },
   });
 
   // PDF export
@@ -138,6 +147,11 @@ export function ChatShell() {
         });
 
         if (data.sessionMemory) updateMemory(data.sessionMemory);
+
+        // TTS: speak AI response in voice mode
+        if (voiceMode && data.message) {
+          speakTTS(data.message, locale);
+        }
       } catch (err) {
         console.error("[ChatShell]", err);
         updateLastAssistantMessage({
@@ -233,6 +247,21 @@ export function ChatShell() {
               </button>
             )}
 
+            {/* Voice mode toggle — TTS on/off */}
+            {voiceSupported && (
+              <button
+                onClick={() => { setVoiceMode((v) => !v); if (voiceMode) stopTTS(); }}
+                title={voiceMode ? (locale === "ru" ? "Выкл. голос" : "Disable voice") : (locale === "ru" ? "Вкл. голосовой режим" : "Enable voice mode")}
+                className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                  voiceMode
+                    ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                    : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                }`}
+              >
+                {voiceMode ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+            )}
+
             {/* Context panel toggle */}
             <button
               onClick={() => setShowContext((v) => !v)}
@@ -305,27 +334,15 @@ export function ChatShell() {
             </AnimatePresence>
 
             {/* Input */}
-            <div className="relative">
-              {voiceSupported && (
-                <button
-                  onClick={toggleVoice}
-                  title={locale === "ru" ? "Голосовой ввод" : "Voice input"}
-                  className={`absolute right-16 bottom-7 z-10 flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-                    isListening
-                      ? "bg-red-100 text-red-500 animate-pulse"
-                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-                </button>
-              )}
-              <ChatInput
-                value={input}
-                onChange={setInput}
-                onSend={() => sendMessage(input)}
-                isLoading={isLoading}
-              />
-            </div>
+            <ChatInput
+              value={input}
+              onChange={setInput}
+              onSend={() => sendMessage(input)}
+              isLoading={isLoading}
+              isListening={isListening}
+              voiceSupported={voiceSupported}
+              onVoiceToggle={toggleVoice}
+            />
           </div>
 
           {/* Context panel */}

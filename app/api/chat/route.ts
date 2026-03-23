@@ -160,38 +160,90 @@ async function buildMockResponseWithClinics(
   return base;
 }
 
-function buildMockResponse(
-  memory: SessionMemory,
-  locale: string,
-  messages: ApiMessage[]
-): MockResponse {
-  const isRu = locale === "ru";
-  const userMessages = messages.filter((m) => m.role === "user");
-  const stage = userMessages.length; // how many user turns so far
+// ─── Specialist detection ─────────────────────────────────────────────────────
+function detectSpecialistFromSymptoms(symptoms: string[], isRu: boolean): string {
+  const lower = symptoms.join(" ").toLowerCase();
 
-  // Extract symptom keywords from latest user message
-  const lastUserText = userMessages[userMessages.length - 1]?.content ?? "";
-  const lowerLast = lastUserText.toLowerCase();
+  if (lower.includes("живот") || lower.includes("желудок") || lower.includes("тошнот") ||
+      lower.includes("рвот") || lower.includes("туалет") || lower.includes("стул") ||
+      lower.includes("stomach") || lower.includes("abdominal") || lower.includes("nausea") || lower.includes("bowel")) {
+    return isRu ? "Гастроэнтеролог" : "Gastroenterologist";
+  }
+  if (lower.includes("сердц") || lower.includes("боль в груди") || lower.includes("chest pain") || lower.includes("аритм")) {
+    return isRu ? "Кардиолог" : "Cardiologist";
+  }
+  if (lower.includes("голов") || lower.includes("мигрен") || lower.includes("головокружен") ||
+      lower.includes("headache") || lower.includes("migrain") || lower.includes("dizz")) {
+    return isRu ? "Невролог" : "Neurologist";
+  }
+  if (lower.includes("кашл") || lower.includes("дыхан") || lower.includes("бронх") ||
+      lower.includes("cough") || lower.includes("breath") || lower.includes("lung")) {
+    return isRu ? "Пульмонолог" : "Pulmonologist";
+  }
+  if (lower.includes("сустав") || lower.includes("спин") || lower.includes("колен") ||
+      lower.includes("joint") || lower.includes("back") || lower.includes("knee")) {
+    return isRu ? "Ортопед / Ревматолог" : "Orthopedist / Rheumatologist";
+  }
+  return isRu ? "Терапевт" : "General Practitioner";
+}
 
-  // Greeting detection — respond naturally without diagnostic flow
-  const greetingWords = ["привет", "здравствуй", "добрый", "hi", "hello", "hey", "good morning", "good evening", "good afternoon", "доброе утро", "добрый день", "добрый вечер"];
-  const isGreeting = stage <= 1 && greetingWords.some((g) => lowerLast.includes(g)) && lastUserText.length < 60;
-  if (isGreeting) {
+// ─── Specialist persona messages ──────────────────────────────────────────────
+function specialistIntro(specialist: string, symptoms: string[], isRu: boolean): { message: string; question: string; questionId: string; options: string[] } {
+  const symStr = symptoms.slice(0, 4).join(isRu ? ", " : ", ");
+
+  if (specialist.toLowerCase().includes("гастро") || specialist.toLowerCase().includes("gastro")) {
     return {
       message: isRu
-        ? "Здравствуйте! Я ваш AI-помощник по медицинской навигации.\n\nОпишите, что вас беспокоит — симптомы, ощущения, как давно началось — и я помогу разобраться, к какому специалисту обратиться."
-        : "Hello! I'm your AI medical navigation assistant.\n\nTell me what's bothering you — your symptoms, sensations, how long they've been going on — and I'll help you figure out the right next step.",
-      urgency: "low",
-      recommendedSpecialist: null,
-      followUpQuestions: [],
-      sessionMemory: memory,
-      requestLocation: false,
-      disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
+        ? `Здравствуйте, я ваш AI-гастроэнтеролог.\n\nИзучил описание: ${symStr}. Ваши симптомы могут указывать на кишечную инфекцию, воспалительный процесс или нарушение моторики кишечника.\n\nМне нужна уточняющая информация:`
+        : `Hello, I'm your AI gastroenterologist.\n\nI've reviewed your symptoms: ${symStr}. These may indicate intestinal infection, inflammatory process, or motility disorder.\n\nI need some clarification:`,
+      question: isRu ? "Как бы вы описали характер боли в животе?" : "How would you describe the abdominal pain?",
+      questionId: "gastro-q1",
+      options: isRu
+        ? ["Постоянная тупая боль", "Приступообразная острая боль", "Спазмы / колики", "Вздутие и дискомфорт"]
+        : ["Constant dull ache", "Sharp, cramping pain", "Spasms / colic", "Bloating and discomfort"],
     };
   }
+  if (specialist.toLowerCase().includes("невролог") || specialist.toLowerCase().includes("neurolog")) {
+    return {
+      message: isRu
+        ? `Здравствуйте, я ваш AI-невролог.\n\nПо описанным симптомам (${symStr}) у меня есть несколько уточняющих вопросов:`
+        : `Hello, I'm your AI neurologist.\n\nBased on your symptoms (${symStr}), I have some clarifying questions:`,
+      question: isRu ? "Как бы вы описали характер головной боли?" : "How would you describe the headache?",
+      questionId: "neuro-q1",
+      options: isRu
+        ? ["Давящая / опоясывающая", "Пульсирующая (обычно с одной стороны)", "Острая / прострел", "Тупая и постоянная"]
+        : ["Pressing / tight", "Pulsating (usually one side)", "Sharp / shooting", "Dull and constant"],
+    };
+  }
+  if (specialist.toLowerCase().includes("кардиолог") || specialist.toLowerCase().includes("cardiolog")) {
+    return {
+      message: isRu
+        ? `Здравствуйте, я ваш AI-кардиолог.\n\nВаши симптомы (${symStr}) требуют внимательной оценки. Сначала несколько важных вопросов:`
+        : `Hello, I'm your AI cardiologist.\n\nYour symptoms (${symStr}) require careful evaluation. A few important questions first:`,
+      question: isRu ? "Есть ли отдышка или ощущение сердцебиения?" : "Do you have shortness of breath or palpitations?",
+      questionId: "cardio-q1",
+      options: isRu
+        ? ["Да, при нагрузке", "Да, даже в покое", "Периодически", "Нет"]
+        : ["Yes, with exertion", "Yes, even at rest", "Occasionally", "No"],
+    };
+  }
+  // Default
+  return {
+    message: isRu
+      ? `Здравствуйте, я ваш AI-${specialist.toLowerCase()}.\n\nПо описанным симптомам (${symStr}) давайте разберёмся подробнее:`
+      : `Hello, I'm your AI ${specialist.toLowerCase()}.\n\nBased on your symptoms (${symStr}), let's explore further:`,
+    question: isRu ? "Симптомы появились впервые или бывали раньше?" : "Are these symptoms new or have you had them before?",
+    questionId: "spec-q1",
+    options: isRu
+      ? ["Впервые", "Иногда бывает", "Хронические, есть давно"]
+      : ["First time", "Occasionally", "Chronic, long-standing"],
+  };
+}
 
-  // Extract city from user message
-  const cityKeywords: { [key: string]: { city: string; country: string } } = {
+// ─── City extraction (known + unknown) ────────────────────────────────────────
+function extractCity(text: string, prevCityQuestion: boolean): { city: string; country: string; known: boolean } | null {
+  const lower = text.toLowerCase().trim();
+  const knownCities: { [kw: string]: { city: string; country: string } } = {
     "москв": { city: "Москва", country: "Россия" },
     "moscow": { city: "Москва", country: "Россия" },
     "берлин": { city: "Berlin", country: "Germany" },
@@ -200,162 +252,313 @@ function buildMockResponse(
     "нью-йорк": { city: "New York", country: "USA" },
     "ташкент": { city: "Ташкент", country: "Узбекистан" },
     "tashkent": { city: "Ташкент", country: "Узбекистан" },
+    "санкт": { city: "Санкт-Петербург", country: "Россия" },
+    "петербург": { city: "Санкт-Петербург", country: "Россия" },
+    "st. pet": { city: "Санкт-Петербург", country: "Россия" },
+    "новосиб": { city: "Новосибирск", country: "Россия" },
+    "екатеринб": { city: "Екатеринбург", country: "Россия" },
+    "краснодар": { city: "Краснодар", country: "Россия" },
+    "лондон": { city: "London", country: "UK" },
+    "london": { city: "London", country: "UK" },
+    "париж": { city: "Paris", country: "France" },
+    "paris": { city: "Paris", country: "France" },
+    "dubai": { city: "Dubai", country: "UAE" },
+    "дубай": { city: "Dubai", country: "UAE" },
   };
-  let detectedCity: { city: string; country: string } | null = null;
-  for (const [kw, loc] of Object.entries(cityKeywords)) {
-    if (lowerLast.includes(kw)) { detectedCity = loc; break; }
+
+  for (const [kw, loc] of Object.entries(knownCities)) {
+    if (lower.includes(kw)) return { ...loc, known: true };
   }
 
-  const extractedSymptoms = extractSymptomKeywords(lastUserText, isRu);
-  const allSymptoms = Array.from(
-    new Set([...memory.symptoms, ...extractedSymptoms])
-  );
+  // If previous question was about city AND message is short → treat as city name
+  if (prevCityQuestion && text.trim().length > 2 && text.trim().length < 50 &&
+      !text.toLowerCase().includes("нет") && !text.toLowerCase().includes("no ")) {
+    const cleaned = text.trim().replace(/^(я из |я в |живу в |я нахожусь в |i live in |i'm in |in )/i, "").trim();
+    const firstWord = cleaned.split(/[\s,\.]/)[0];
+    if (firstWord.length > 2) {
+      return { city: cleaned.charAt(0).toUpperCase() + cleaned.slice(1), country: "", known: false };
+    }
+  }
 
-  // Urgency guess from keywords
-  const urgent = URGENT_KEYWORDS.some((k) =>
-    lastUserText.toLowerCase().includes(k)
-  );
+  return null;
+}
+
+function buildMockResponse(
+  memory: SessionMemory,
+  locale: string,
+  messages: ApiMessage[]
+): MockResponse {
+  const isRu = locale === "ru";
+  const userMessages = messages.filter((m) => m.role === "user");
+  const stage = userMessages.length;
+  const lastUserText = userMessages[userMessages.length - 1]?.content ?? "";
+  const lowerLast = lastUserText.toLowerCase();
+  const DISC = isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.";
+
+  // ── Greeting ────────────────────────────────────────────────────────────────
+  const greetings = ["привет", "здравствуй", "добрый", "hi", "hello", "hey", "доброе", "добрый день", "добрый вечер"];
+  const isGreeting = stage <= 1 && greetings.some((g) => lowerLast.includes(g)) && lastUserText.length < 70;
+  if (isGreeting) {
+    return {
+      message: isRu
+        ? "Здравствуйте! Я ваш AI-терапевт MedNavigator.\n\nОпишите, что вас беспокоит — симптомы, ощущения, как давно началось — и я помогу разобраться, к какому специалисту нужно обратиться."
+        : "Hello! I'm your AI general practitioner from MedNavigator.\n\nTell me what's bothering you — your symptoms, how long they've lasted — and I'll help find the right specialist.",
+      urgency: "low", recommendedSpecialist: null, followUpQuestions: [],
+      sessionMemory: memory, requestLocation: false, disclaimer: DISC,
+    };
+  }
+
+  // ── Symptoms extraction + city detection ─────────────────────────────────────
+  const extractedSymptoms = extractSymptomKeywords(lastUserText, isRu);
+  const allSymptoms = Array.from(new Set([...memory.symptoms, ...extractedSymptoms]));
+
+  const urgent = URGENT_KEYWORDS.some((k) => lowerLast.includes(k));
+
+  // Was the previous AI message asking for city?
+  const allMessages = messages;
+  const prevAiMessages = allMessages.filter((m) => m.role === "assistant");
+  const lastAiText = prevAiMessages[prevAiMessages.length - 1]?.content ?? "";
+  const prevWasCityQuestion = lastAiText.toLowerCase().includes("город") || lastAiText.toLowerCase().includes("city") || lastAiText.toLowerCase().includes("где вы");
+
+  const cityResult = extractCity(lastUserText, prevWasCityQuestion);
+  const effectiveCity = cityResult
+    ? { city: cityResult.city, country: cityResult.country }
+    : memory.location;
+  const cityJustSet = !!cityResult && !memory.location.city;
+  const cityChanged = !!cityResult && memory.location.city && memory.location.city !== cityResult.city;
 
   const updatedMemory: SessionMemory = {
     ...memory,
     symptoms: allSymptoms,
     urgency: urgent ? "high" : memory.urgency ?? "low",
-    location: detectedCity
-      ? { city: detectedCity.city, country: detectedCity.country }
-      : memory.location,
+    location: effectiveCity,
+    specialist: memory.specialist ?? (allSymptoms.length > 0 ? detectSpecialistFromSymptoms(allSymptoms, isRu) : null),
   };
 
+  // ── Emergency ───────────────────────────────────────────────────────────────
   if (urgent) {
     return {
       message: isRu
-        ? "Некоторые из ваших симптомов требуют срочного внимания. Пожалуйста, немедленно обратитесь за медицинской помощью или вызовите скорую."
-        : "Some of your symptoms require urgent attention. Please seek immediate medical care or call emergency services.",
-      urgency: "high" as const,
-      recommendedSpecialist: isRu ? "Скорая помощь / Кардиолог" : "Emergency / Cardiologist",
-      followUpQuestions: [],
-      sessionMemory: updatedMemory,
-      requestLocation: false,
-      disclaimer: isRu ? "Это не диагноз. При экстренной ситуации звоните 112." : "Not a diagnosis. Call emergency services if needed.",
+        ? "⚠️ Ваши симптомы могут указывать на экстренную ситуацию. Немедленно позвоните 103 (скорая) или 112."
+        : "⚠️ Your symptoms may indicate an emergency. Call 911 immediately.",
+      urgency: "high", recommendedSpecialist: isRu ? "Скорая помощь" : "Emergency Services",
+      followUpQuestions: [], sessionMemory: updatedMemory, requestLocation: false,
+      disclaimer: isRu ? "При экстренной ситуации звоните 112." : "Call emergency services immediately.",
     };
   }
 
-  // Stage 4+: respond intelligently to user's actual message
-  if (stage >= 4) {
-    const freeResponse = buildFreeResponse(isRu, lastUserText, allSymptoms, memory);
-    if (freeResponse) {
+  const specialist = updatedMemory.specialist ?? (isRu ? "Терапевт" : "General Practitioner");
+  const symStr = allSymptoms.length > 0
+    ? allSymptoms.slice(0, 5).join(isRu ? ", " : ", ")
+    : isRu ? "ваши симптомы" : "your symptoms";
+
+  // ── City confirmed / changed ─────────────────────────────────────────────────
+  if (cityJustSet || cityChanged) {
+    const cityName = effectiveCity.city;
+    const isKnown = cityResult?.known ?? false;
+
+    if (!isKnown) {
       return {
-        ...freeResponse,
-        sessionMemory: updatedMemory,
-        requestLocation: !memory.location.city,
-        disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
+        message: isRu
+          ? `Понял, вы в ${cityName}. К сожалению, наша база клиник пока не покрывает этот город напрямую.\n\nРекомендую:\n• Обратиться в городскую поликлинику по месту жительства\n• Найти клинику через сайт ОМС или НМП вашего региона\n• Позвонить на горячую линию здравоохранения региона\n\nВам нужна консультация специалиста: ${specialist}.`
+          : `Got it, you're in ${cityName}. Unfortunately our clinic database doesn't cover this city directly.\n\nI recommend:\n• Visit your local clinic or hospital\n• Search through your regional health system\n• Call the regional health hotline\n\nYou need: ${specialist}.`,
+        urgency: (updatedMemory.urgency as "low" | "medium" | "high") ?? "medium",
+        recommendedSpecialist: specialist,
+        followUpQuestions: [{
+          id: "city-help",
+          question: isRu ? "Как ещё могу помочь?" : "How else can I help?",
+          type: "single-choice" as const,
+          options: isRu
+            ? ["Что взять к врачу", "Возможные причины симптомов", "Задать другой вопрос"]
+            : ["What to bring to the doctor", "Possible causes", "Ask another question"],
+        }],
+        sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
       };
     }
+
+    return {
+      message: isRu
+        ? `Отлично, нашёл клиники и врачей в ${cityName}! Показываю результаты ниже.\n\nРекомендую обратиться к ${specialist}. При записи упомяните основные симптомы: ${symStr}.`
+        : `Great, found clinics and doctors in ${cityName}! See results below.\n\nI recommend seeing a ${specialist}. When booking, mention your main symptoms: ${symStr}.`,
+      urgency: (updatedMemory.urgency as "low" | "medium" | "high") ?? "medium",
+      recommendedSpecialist: specialist,
+      followUpQuestions: [],
+      sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
+    };
   }
 
-  // Stage-based conversation flow (stages 1-3)
-  const stages = buildStages(isRu, allSymptoms, memory);
-  const stageData = stages[Math.min(stage - 1, stages.length - 1)] ?? stages[stages.length - 1];
+  // ── Specialist Q&A (after specialist stage) ──────────────────────────────────
+  if (stage >= 5 && memory.specialist) {
+    // If city is known → already showed clinics. Answer follow-up questions.
+    if (memory.location.city) {
+      return buildSpecialistQA(isRu, lastUserText, allSymptoms, updatedMemory, specialist, DISC);
+    }
+    // Ask for city
+    return {
+      message: isRu
+        ? `Спасибо за ответ. Это помогает уточнить картину.\n\nЧтобы порекомендовать конкретных врачей и клиники — в каком городе вы находитесь?`
+        : `Thank you, that helps clarify the picture.\n\nTo recommend specific doctors and clinics — what city are you in?`,
+      urgency: (updatedMemory.urgency as "low" | "medium" | "high") ?? "medium",
+      recommendedSpecialist: specialist,
+      followUpQuestions: [{
+        id: "city-input",
+        question: isRu ? "Укажите ваш город:" : "What city are you in?",
+        type: "free-text" as const,
+      }],
+      sessionMemory: updatedMemory, requestLocation: true, disclaimer: DISC,
+    };
+  }
 
+  // ── Stage 4: Specialist intro ─────────────────────────────────────────────────
+  if (stage >= 4) {
+    if (!memory.specialist) {
+      // GP hands off to specialist
+      const detectedSpec = detectSpecialistFromSymptoms(allSymptoms, isRu);
+      updatedMemory.specialist = detectedSpec;
+      const intro = specialistIntro(detectedSpec, allSymptoms, isRu);
+      return {
+        message: isRu
+          ? `Как терапевт, на основе ваших симптомов (${symStr}), направляю вас к специалисту.\n\n---\n\n${intro.message}`
+          : `As your general practitioner, based on your symptoms (${symStr}), I'm connecting you with a specialist.\n\n---\n\n${intro.message}`,
+        urgency: "medium",
+        recommendedSpecialist: detectedSpec,
+        followUpQuestions: [{
+          id: intro.questionId,
+          question: intro.question,
+          type: "single-choice" as const,
+          options: intro.options,
+        }],
+        sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
+      };
+    }
+    // Specialist is known, ask specialist question
+    const intro = specialistIntro(memory.specialist, allSymptoms, isRu);
+    return {
+      message: intro.message,
+      urgency: "medium",
+      recommendedSpecialist: memory.specialist,
+      followUpQuestions: [{
+        id: intro.questionId,
+        question: intro.question,
+        type: "single-choice" as const,
+        options: intro.options,
+      }],
+      sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
+    };
+  }
+
+  // ── Stage 3: severity → GP summary + identify specialist ────────────────────
+  if (stage === 3) {
+    const detectedSpec = detectSpecialistFromSymptoms(allSymptoms, isRu);
+    updatedMemory.specialist = detectedSpec;
+    return {
+      message: isRu
+        ? `Понял. Исходя из описанных симптомов (${symStr}), рекомендую консультацию специалиста — ${detectedSpec}.\n\nПозвольте уточнить подробности у специалиста. Продолжаем...`
+        : `Got it. Based on your symptoms (${symStr}), I recommend seeing a ${detectedSpec}.\n\nLet me connect you with a specialist for more details.`,
+      urgency: "medium",
+      recommendedSpecialist: detectedSpec,
+      followUpQuestions: [{
+        id: "confirm-handoff",
+        question: isRu ? "Хотите уточнить что-то ещё перед переходом к специалисту?" : "Anything to add before I connect you to the specialist?",
+        type: "single-choice" as const,
+        options: isRu
+          ? ["Продолжить", "Есть ещё симптомы", "Хочу объяснить подробнее"]
+          : ["Continue", "I have more symptoms", "Let me explain more"],
+      }],
+      sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
+    };
+  }
+
+  // ── Stage 2: duration → ask severity ──────────────────────────────────────────
+  if (stage === 2) {
+    return {
+      message: isRu
+        ? `Понял. Симптомы: ${symStr}. Насколько сильно это влияет на вашу повседневную жизнь?`
+        : `I see. Symptoms: ${symStr}. How much is this affecting your daily life?`,
+      urgency: "low",
+      recommendedSpecialist: null,
+      followUpQuestions: [{
+        id: "severity",
+        question: isRu ? "Оцените интенсивность:" : "How severe is it?",
+        type: "single-choice" as const,
+        options: isRu
+          ? ["Слабо — почти не мешает", "Умеренно — заметно мешает", "Сильно — не могу нормально функционировать"]
+          : ["Mild — barely noticeable", "Moderate — noticeably affects me", "Severe — hard to function normally"],
+      }],
+      sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
+    };
+  }
+
+  // ── Stage 1: first symptoms message ───────────────────────────────────────────
   return {
-    message: stageData.message,
-    urgency: stageData.urgency,
-    recommendedSpecialist: stageData.specialist ?? memory.specialist,
-    followUpQuestions: stageData.question ? [stageData.question] : [],
-    sessionMemory: updatedMemory,
-    requestLocation: stage >= 3,
-    disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
+    message: isRu
+      ? `Я отметил ваши симптомы: ${symStr}.\n\nКак долго они продолжаются?`
+      : `I've noted your symptoms: ${symStr}.\n\nHow long have you been experiencing this?`,
+    urgency: "low",
+    recommendedSpecialist: null,
+    followUpQuestions: [{
+      id: "duration",
+      question: isRu ? "Как долго продолжаются симптомы?" : "How long have the symptoms lasted?",
+      type: "single-choice" as const,
+      options: isRu
+        ? ["Менее суток", "2–3 дня", "1–2 недели", "Больше месяца"]
+        : ["Less than a day", "2–3 days", "1–2 weeks", "Over a month"],
+    }],
+    sessionMemory: updatedMemory, requestLocation: false, disclaimer: DISC,
   };
 }
 
-// ─── Free response for stage 4+ questions ─────────────────────────────────────
-type FreeResponse = Omit<MockResponse, "sessionMemory" | "requestLocation" | "disclaimer">;
-
-function buildFreeResponse(
+// ─── Specialist open Q&A ──────────────────────────────────────────────────────
+function buildSpecialistQA(
   isRu: boolean,
   userText: string,
   symptoms: string[],
-  memory: SessionMemory
-): FreeResponse | null {
+  memory: SessionMemory,
+  specialist: string,
+  disclaimer: string
+): MockResponse {
   const lower = userText.toLowerCase();
-  const symStr = symptoms.join(isRu ? ", " : ", ");
-  const specialist = memory.specialist ?? (isRu ? "терапевта" : "a general practitioner");
+  const symStr = symptoms.slice(0, 4).join(isRu ? ", " : ", ");
 
-  // Asking about possible causes
-  if (
-    lower.includes("причин") || lower.includes("почему") ||
-    lower.includes("что это") || lower.includes("causes") ||
-    lower.includes("why") || lower.includes("what could") ||
-    lower.includes("можете помочь") || lower.includes("can you help")
-  ) {
-    const causes = buildCausesMessage(isRu, symptoms);
+  if (lower.includes("причин") || lower.includes("почему") || lower.includes("что это") ||
+      lower.includes("causes") || lower.includes("why") || lower.includes("what could")) {
     return {
-      message: causes,
-      urgency: memory.urgency as "low" | "medium" | "high" ?? "medium",
-      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
-      followUpQuestions: [{
-        id: "next-step",
-        question: isRu ? "Что хотите сделать дальше?" : "What would you like to do next?",
-        type: "single-choice" as const,
-        options: isRu
-          ? ["Найти клинику рядом", "Что взять с собой к врачу", "Задать ещё вопрос"]
-          : ["Find a nearby clinic", "What to bring to the doctor", "Ask another question"],
-      }],
-    };
-  }
-
-  // Asking for clinic/hospital help
-  if (
-    lower.includes("клиник") || lower.includes("больниц") || lower.includes("врач") ||
-    lower.includes("clinic") || lower.includes("hospital") || lower.includes("doctor")
-  ) {
-    return {
-      message: isRu
-        ? `Чтобы подобрать клинику в вашем городе (${memory.location.city ?? "укажите город"}), порекомендую обратиться к ${specialist}. Если нужно — уточните город и я помогу с поиском.`
-        : `To find a clinic near you (${memory.location.city ?? "please specify your city"}), I recommend seeing ${specialist}. Tell me your city and I'll help search.`,
-      urgency: "medium" as const,
-      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
+      message: buildCausesMessage(isRu, symptoms),
+      urgency: (memory.urgency as "low" | "medium" | "high") ?? "medium",
+      recommendedSpecialist: specialist,
       followUpQuestions: [],
+      sessionMemory: memory, requestLocation: false, disclaimer,
     };
   }
 
-  // What to prepare for the doctor
-  if (
-    lower.includes("взять") || lower.includes("подготов") || lower.includes("prepare") ||
-    lower.includes("bring") || lower.includes("before")
-  ) {
+  if (lower.includes("взять") || lower.includes("подготов") || lower.includes("prepare") || lower.includes("bring")) {
     return {
       message: isRu
-        ? `Перед визитом к ${specialist} рекомендую:\n\n• Записать все симптомы: ${symStr}\n• Отметить когда началось и как менялось\n• Взять результаты предыдущих анализов, если есть\n• Список принимаемых лекарств\n• Паспорт и полис (при наличии)`
-        : `Before seeing ${specialist}, prepare:\n\n• List your symptoms: ${symStr}\n• Note when it started and how it changed\n• Bring previous test results if any\n• List of current medications\n• ID and insurance card`,
-      urgency: "low" as const,
-      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
+        ? `Перед визитом к ${specialist}:\n\n• Записать все симптомы: ${symStr}\n• Даты начала каждого симптома\n• Принимаемые лекарства (если есть)\n• Результаты анализов (если есть)\n• Паспорт и медицинский полис`
+        : `Before visiting the ${specialist}:\n\n• List all symptoms: ${symStr}\n• When each started\n• Current medications (if any)\n• Previous test results (if any)\n• ID and insurance card`,
+      urgency: "low", recommendedSpecialist: specialist,
       followUpQuestions: [],
+      sessionMemory: memory, requestLocation: false, disclaimer,
     };
   }
 
-  // Frustration / "you can answer?" / repeat question
-  if (
-    lower.includes("ответить") || lower.includes("слышите") || lower.includes("там") ||
-    lower.includes("are you") || lower.includes("answer me") || lower.includes("hello")
-  ) {
-    return {
-      message: isRu
-        ? `Да, я здесь! Прошу прощения, если мои ответы казались однотипными.\n\nНа основе того, что вы описали (${symStr}), я могу помочь:\n• Объяснить возможные причины симптомов\n• Найти клинику в вашем городе\n• Подсказать, что взять на приём\n• Ответить на конкретный вопрос\n\nЧто вас интересует?`
-        : `Yes, I'm here! Sorry if my responses felt repetitive.\n\nBased on what you described (${symStr}), I can help you:\n• Explain possible causes\n• Find a clinic near you\n• Suggest what to bring to the appointment\n• Answer a specific question\n\nWhat would you like?`,
-      urgency: memory.urgency as "low" | "medium" | "high" ?? "low",
-      recommendedSpecialist: memory.specialist,
-      followUpQuestions: [{
-        id: "help-type",
-        question: isRu ? "Чем могу помочь?" : "How can I help?",
-        type: "single-choice" as const,
-        options: isRu
-          ? ["Возможные причины", "Найти клинику", "Что взять к врачу", "Другой вопрос"]
-          : ["Possible causes", "Find a clinic", "Prepare for visit", "Other question"],
-      }],
-    };
-  }
-
-  return null;
+  // Default follow-up
+  return {
+    message: isRu
+      ? `Спасибо за информацию. Основываясь на описанных симптомах (${symStr}), рекомендую не откладывать визит к ${specialist}.\n\nЕсть ли другие вопросы?`
+      : `Thank you. Based on your symptoms (${symStr}), I recommend seeing the ${specialist} soon.\n\nAny other questions?`,
+    urgency: (memory.urgency as "low" | "medium" | "high") ?? "medium",
+    recommendedSpecialist: specialist,
+    followUpQuestions: [{
+      id: "final-help",
+      question: isRu ? "Что ещё могу помочь?" : "How else can I help?",
+      type: "single-choice" as const,
+      options: isRu
+        ? ["Возможные причины", "Что взять к врачу", "Всё понятно, спасибо"]
+        : ["Possible causes", "What to bring to doctor", "All clear, thanks"],
+    }],
+    sessionMemory: memory, requestLocation: false, disclaimer,
+  };
 }
 
 function buildCausesMessage(isRu: boolean, symptoms: string[]): string {
@@ -466,69 +669,3 @@ function extractSymptomKeywords(text: string, isRu: boolean): string[] {
     .map(([, symptom]) => symptom);
 }
 
-function buildStages(isRu: boolean, symptoms: string[], memory: SessionMemory) {
-  const symList = symptoms.length > 0
-    ? symptoms.join(isRu ? ", " : ", ")
-    : isRu ? "ваши симптомы" : "your symptoms";
-
-  return [
-    // Stage 1 – duration
-    {
-      message: isRu
-        ? `Я зафиксировал: ${symList}. Как долго это у вас продолжается?`
-        : `I've noted: ${symList}. How long have you been experiencing this?`,
-      urgency: "low" as const,
-      specialist: memory.specialist,
-      question: {
-        id: "duration",
-        question: isRu ? "Как долго продолжаются симптомы?" : "How long have the symptoms lasted?",
-        type: "single-choice" as const,
-        options: isRu
-          ? ["Менее суток", "2–3 дня", "1–2 недели", "Больше месяца"]
-          : ["Less than a day", "2–3 days", "1–2 weeks", "Over a month"],
-      },
-    },
-    // Stage 2 – severity
-    {
-      message: isRu
-        ? `Понял. Насколько сильно это влияет на ваш привычный распорядок?`
-        : `Got it. How much is this affecting your daily routine?`,
-      urgency: "low" as const,
-      specialist: memory.specialist,
-      question: {
-        id: "severity",
-        question: isRu ? "Оцените интенсивность:" : "How severe is it?",
-        type: "single-choice" as const,
-        options: isRu
-          ? ["Слабо — почти не мешает", "Умеренно — заметно мешает", "Сильно — не могу нормально функционировать"]
-          : ["Mild — barely noticeable", "Moderate — affects my day", "Severe — hard to function"],
-      },
-    },
-    // Stage 3 – location request + specialist hint
-    {
-      message: isRu
-        ? `Спасибо. Исходя из описанного, вам может подойти консультация ${memory.specialist ?? "терапевта"}. Чтобы помочь найти подходящую клинику — в каком городе вы находитесь?`
-        : `Thank you. Based on what you've described, seeing a ${memory.specialist ?? "general practitioner"} would be a good first step. To help find a nearby clinic — what city are you in?`,
-      urgency: "medium" as const,
-      specialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
-      question: {
-        id: "location",
-        question: isRu ? "Укажите ваш город:" : "What city are you in?",
-        type: "free-text" as const,
-      },
-    },
-    // Stage 4+ – guidance summary
-    {
-      message: isRu
-        ? `На основе нашего разговора рекомендую обратиться к ${memory.specialist ?? "терапевту"} — это хороший первый шаг. Есть ли ещё что-то, что вас беспокоит?`
-        : `Based on our conversation, I'd recommend seeing a ${memory.specialist ?? "general practitioner"} as a first step. Is there anything else bothering you?`,
-      urgency: "low" as const,
-      specialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
-      question: {
-        id: "more",
-        question: isRu ? "Хотите добавить что-то ещё?" : "Anything else to add?",
-        type: "free-text" as const,
-      },
-    },
-  ];
-}

@@ -235,27 +235,24 @@ function SessionItem({
         </p>
       </div>
 
-      {/* Action buttons — visible on hover, hidden for current */}
-      {!isRenaming && !isCurrent && hovered && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-lg bg-white shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700 px-1 py-0.5">
+      {/* Action buttons — always visible for past sessions */}
+      {!isRenaming && !isCurrent && (
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={(e) => { e.stopPropagation(); onRename(); }}
-            className="rounded p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+            className="rounded p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 active:bg-blue-100 dark:text-slate-600 dark:hover:text-blue-400 dark:hover:bg-blue-950/30 transition-colors"
             title={isRu ? "Переименовать" : "Rename"}
           >
             <Pencil className="h-3 w-3" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+            className="rounded p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 active:bg-red-100 dark:text-slate-600 dark:hover:text-red-400 dark:hover:bg-red-950/30 transition-colors"
             title={isRu ? "Удалить" : "Delete"}
           >
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
-      )}
-      {!isRenaming && !hovered && !isCurrent && (
-        <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-200 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-700" />
       )}
     </motion.div>
   );
