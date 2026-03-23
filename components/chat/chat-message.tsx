@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, Stethoscope } from "lucide-react";
+import { AlertTriangle, Stethoscope, ThumbsUp, ThumbsDown } from "lucide-react";
 import type { ChatMessage as ChatMessageType } from "@/lib/store/chat";
 import { OptionChips } from "./option-chips";
 import { RecommendationCards } from "./recommendation-cards";
@@ -20,9 +20,10 @@ interface ChatMessageProps {
   onOptionSelect?: (questionId: string, value: string) => void;
   isLast?: boolean;
   onTypingDone?: (id: string) => void;
+  onRate?: (id: string, rating: "up" | "down" | null) => void;
 }
 
-export function ChatMessageBubble({ message, onOptionSelect, isLast, onTypingDone }: ChatMessageProps) {
+export function ChatMessageBubble({ message, onOptionSelect, isLast, onTypingDone, onRate }: ChatMessageProps) {
   const { t } = useI18n();
   const isUser = message.role === "user";
 
@@ -117,6 +118,34 @@ export function ChatMessageBubble({ message, onOptionSelect, isLast, onTypingDon
             hospitals={message.recommendations.hospitals}
             doctors={message.recommendations.doctors}
           />
+        )}
+
+        {/* Rating buttons — shown after typing done */}
+        {!message.isNew && !message.isLoading && onRate && (
+          <div className="flex items-center gap-1 pl-1">
+            <button
+              onClick={() => onRate(message.id, message.rating === "up" ? null : "up")}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors",
+                message.rating === "up"
+                  ? "bg-green-50 text-green-600 dark:bg-green-950/40"
+                  : "text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-950/20"
+              )}
+            >
+              <ThumbsUp className="h-3 w-3" />
+            </button>
+            <button
+              onClick={() => onRate(message.id, message.rating === "down" ? null : "down")}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition-colors",
+                message.rating === "down"
+                  ? "bg-red-50 text-red-500 dark:bg-red-950/40"
+                  : "text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
+              )}
+            >
+              <ThumbsDown className="h-3 w-3" />
+            </button>
+          </div>
         )}
       </div>
     </motion.div>

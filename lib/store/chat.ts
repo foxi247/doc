@@ -19,6 +19,7 @@ export interface ChatMessage {
   };
   isLoading?: boolean;
   isNew?: boolean;
+  rating?: "up" | "down" | null;
 }
 
 export interface ChatSession {
@@ -40,6 +41,7 @@ interface ChatStore {
   addMessage: (msg: Omit<ChatMessage, "id" | "timestamp">) => string;
   updateLastAssistantMessage: (updates: Partial<ChatMessage>) => void;
   markMessageRead: (id: string) => void;
+  rateMessage: (id: string, rating: "up" | "down" | null) => void;
   updateMemory: (updates: Partial<SessionMemory>) => void;
   setLoading: (loading: boolean) => void;
   reset: () => void;
@@ -88,6 +90,12 @@ export const useChatStore = create<ChatStore>()(
       markMessageRead: (id) => {
         set((s) => ({
           messages: s.messages.map((m) => (m.id === id ? { ...m, isNew: false } : m)),
+        }));
+      },
+
+      rateMessage: (id, rating) => {
+        set((s) => ({
+          messages: s.messages.map((m) => (m.id === id ? { ...m, rating } : m)),
         }));
       },
 

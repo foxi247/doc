@@ -18,17 +18,8 @@ interface ChatSidebarProps {
 export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const { t } = useI18n();
   const { messages, history, reset, renameSession, deleteSession } = useChatStore();
-  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!contextMenu) return;
-    const handler = () => setContextMenu(null);
-    window.addEventListener("pointerdown", handler);
-    return () => window.removeEventListener("pointerdown", handler);
-  }, [contextMenu]);
 
   const isRu = t("chat.title") === "Медицинская навигация";
 
@@ -55,14 +46,7 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
     onClose?.();
   };
 
-  const openContextMenu = (id: string, e: React.MouseEvent | React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ id, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
-  };
-
   const startRename = (session: ChatSession) => {
-    setContextMenu(null);
     setRenamingId(session.id);
     setRenameValue(session.name);
   };
@@ -75,7 +59,6 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
   };
 
   const handleDelete = (id: string) => {
-    setContextMenu(null);
     deleteSession(id);
   };
 
@@ -122,8 +105,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
             renameValue={renameValue}
             onRenameChange={setRenameValue}
             onRenameCommit={commitRename}
-            onContextMenu={(e) => openContextMenu(currentSession.id, e)}
-            onLongPress={(e) => openContextMenu(currentSession.id, e)}
+            onRename={() => {/* current session not renameable */}}
+            onDelete={() => {/* current session not deleteable */}}
+            isRu={isRu}
+            isCurrent
           />
         )}
 
@@ -139,8 +124,10 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
               renameValue={renameValue}
               onRenameChange={setRenameValue}
               onRenameCommit={commitRename}
-              onContextMenu={(e) => openContextMenu(session.id, e)}
-              onLongPress={(e) => openContextMenu(session.id, e)}
+              onRename={() => startRename(session)}
+              onDelete={() => handleDelete(session.id)}
+              isRu={isRu}
+              isCurrent={false}
             />
           ))
         ) : (
@@ -172,51 +159,6 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
         <LanguageSwitcher variant="pill" />
       </div>
-
-      {/* Context menu */}
-      <AnimatePresence>
-        {contextMenu && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.92 }}
-            transition={{ duration: 0.12 }}
-            onPointerDown={(e) => e.stopPropagation()}
-            style={{ position: "fixed", left: Math.min(contextMenu.x, window.innerWidth - 160), top: contextMenu.y, zIndex: 100 }}
-            className="min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800"
-          >
-            {contextMenu.id !== "current" && (
-              <>
-                <button
-                  onClick={() => {
-                    const s = history.find((h) => h.id === contextMenu.id);
-                    if (s) startRename(s);
-                  }}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {isRu ? "Переименовать" : "Rename"}
-                </button>
-                <button
-                  onClick={() => handleDelete(contextMenu.id)}
-                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {isRu ? "Удалить" : "Delete"}
-                </button>
-              </>
-            )}
-            {contextMenu.id === "current" && (
-              <button
-                onClick={() => setContextMenu(null)}
-                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700"
-              >
-                {isRu ? "Текущий чат" : "Current chat"}
-              </button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -230,8 +172,10 @@ function SessionItem({
   renameValue,
   onRenameChange,
   onRenameCommit,
-  onContextMenu,
-  onLongPress,
+  onRename,
+  onDelete,
+  isRu,
+  isCurrent,
 }: {
   session: { id: string; name: string; timestamp: number; messageCount: number };
   isActive: boolean;
@@ -240,29 +184,21 @@ function SessionItem({
   renameValue: string;
   onRenameChange: (v: string) => void;
   onRenameCommit: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onLongPress: (e: React.PointerEvent) => void;
+  onRename: () => void;
+  onDelete: () => void;
+  isRu: boolean;
+  isCurrent: boolean;
 }) {
-  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    pressTimerRef.current = setTimeout(() => onLongPress(e), 600);
-  };
-  const clearPress = () => {
-    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
-  };
-
   const isRenaming = renamingId === session.id;
+  const [hovered, setHovered] = useState(false);
 
   return (
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.03 }}
-      onContextMenu={onContextMenu}
-      onPointerDown={handlePointerDown}
-      onPointerUp={clearPress}
-      onPointerLeave={clearPress}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={`group relative flex items-start gap-2 rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${
         isActive
           ? "bg-blue-50 dark:bg-blue-950/30"
@@ -298,7 +234,27 @@ function SessionItem({
           {formatTime(session.timestamp)}
         </p>
       </div>
-      {!isRenaming && (
+
+      {/* Action buttons — visible on hover, hidden for current */}
+      {!isRenaming && !isCurrent && hovered && (
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-lg bg-white shadow-sm border border-slate-100 dark:bg-slate-800 dark:border-slate-700 px-1 py-0.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onRename(); }}
+            className="rounded p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+            title={isRu ? "Переименовать" : "Rename"}
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="rounded p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+            title={isRu ? "Удалить" : "Delete"}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+      {!isRenaming && !hovered && !isCurrent && (
         <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-200 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-700" />
       )}
     </motion.div>

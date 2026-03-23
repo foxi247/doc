@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown } from "lucide-react";
+import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown, FileDown, Mic, MicOff } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import { ChatMessageBubble } from "./chat-message";
 import { ContextPanel } from "./context-panel";
@@ -10,6 +10,8 @@ import { QuickStarterChips } from "./option-chips";
 import { ChatSidebar, MobileSidebar } from "./chat-sidebar";
 import { useChatStore, selectApiMessages } from "@/lib/store/chat";
 import { useI18n } from "@/lib/i18n";
+import { useVoiceInput } from "@/lib/hooks/use-voice-input";
+import { exportChatToPdf } from "@/lib/export/chat-pdf";
 import type { ChatResponse } from "@/lib/ai/chat-types";
 
 export function ChatShell() {
@@ -17,7 +19,7 @@ export function ChatShell() {
   const {
     messages, memory, isLoading,
     addMessage, updateLastAssistantMessage, updateMemory,
-    markMessageRead, setLoading,
+    markMessageRead, rateMessage, setLoading,
   } = useChatStore();
 
   const [input, setInput] = useState("");
@@ -30,6 +32,17 @@ export function ChatShell() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Voice input
+  const { isListening, isSupported: voiceSupported, toggle: toggleVoice } = useVoiceInput({
+    locale,
+    onResult: (text) => setInput((prev) => prev ? `${prev} ${text}` : text),
+  });
+
+  // PDF export
+  const exportPdf = useCallback(() => {
+    exportChatToPdf(messages, locale);
+  }, [messages, locale]);
 
   // Scroll tracking
   const handleScroll = useCallback(() => {
@@ -209,6 +222,17 @@ export function ChatShell() {
               )}
             </button>
 
+            {/* PDF export button */}
+            {messages.filter((m) => !m.isLoading && m.content.trim()).length > 1 && (
+              <button
+                onClick={exportPdf}
+                title={locale === "ru" ? "Сохранить как PDF" : "Save as PDF"}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              >
+                <FileDown className="h-4 w-4" />
+              </button>
+            )}
+
             {/* Context panel toggle */}
             <button
               onClick={() => setShowContext((v) => !v)}
@@ -245,6 +269,7 @@ export function ChatShell() {
                     onOptionSelect={handleOptionSelect}
                     isLast={i === messages.length - 1}
                     onTypingDone={markMessageRead}
+                    onRate={msg.role === "assistant" ? rateMessage : undefined}
                   />
                 ))}
               </AnimatePresence>
@@ -272,7 +297,7 @@ export function ChatShell() {
                   exit={{ opacity: 0, scale: 0.8, y: 8 }}
                   transition={{ duration: 0.18 }}
                   onClick={scrollToBottom}
-                  className="absolute bottom-24 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                  className="absolute bottom-24 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
                 >
                   <ChevronDown className="h-5 w-5" />
                 </motion.button>
@@ -280,12 +305,27 @@ export function ChatShell() {
             </AnimatePresence>
 
             {/* Input */}
-            <ChatInput
-              value={input}
-              onChange={setInput}
-              onSend={() => sendMessage(input)}
-              isLoading={isLoading}
-            />
+            <div className="relative">
+              {voiceSupported && (
+                <button
+                  onClick={toggleVoice}
+                  title={locale === "ru" ? "Голосовой ввод" : "Voice input"}
+                  className={`absolute right-16 bottom-7 z-10 flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+                    isListening
+                      ? "bg-red-100 text-red-500 animate-pulse"
+                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                </button>
+              )}
+              <ChatInput
+                value={input}
+                onChange={setInput}
+                onSend={() => sendMessage(input)}
+                isLoading={isLoading}
+              />
+            </div>
           </div>
 
           {/* Context panel */}

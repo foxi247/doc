@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import Hero from "@/components/hero";
 import HowItWorks from "@/components/how-it-works";
-import SafetySection from "@/components/safety-section";
-import ClinicsSection from "@/components/clinics-section";
 import CTABand from "@/components/cta-band";
 
 export const metadata: Metadata = {
@@ -16,8 +14,6 @@ export default function HomePage() {
     <>
       <Hero />
       <HowItWorks />
-      <SafetySection />
-      <ClinicsSection />
       <CTABand />
     </>
   );

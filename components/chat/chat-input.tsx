@@ -3,7 +3,6 @@
 import { useRef, useEffect, KeyboardEvent } from "react";
 import { motion } from "framer-motion";
 import { Send, Paperclip } from "lucide-react";
-import { MascotFDoctor } from "./mascot-f-doctor";
 import { useI18n } from "@/lib/i18n";
 
 interface ChatInputProps {
@@ -25,7 +24,6 @@ export function ChatInput({
 }: ChatInputProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isTyping = value.trim().length > 0;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -45,12 +43,7 @@ export function ChatInput({
   const canSend = value.trim().length > 0 && !isLoading && !disabled;
 
   return (
-    <div className="px-3 pb-4 pt-1">
-      {/* Mascot walks along this bar when thinking */}
-      <div className="relative mb-1 flex h-12 w-full items-center justify-center overflow-visible">
-        <MascotFDoctor isTyping={isTyping} isThinking={isLoading} size={44} />
-      </div>
-
+    <div className="px-3 pb-4 pt-2">
       <div className="relative flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-blue-300 focus-within:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:focus-within:border-blue-700">
         {onFileAttach && (
           <button

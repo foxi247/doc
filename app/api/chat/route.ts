@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     !process.env.NVIDIA_API_KEY ||
     process.env.NVIDIA_API_KEY === "placeholder-key"
   ) {
-    return NextResponse.json(buildMockResponse(memory, locale, sanitizedMessages));
+    return NextResponse.json(await buildMockResponseWithClinics(memory, locale, sanitizedMessages));
   }
 
   const controller = new AbortController();
@@ -93,13 +93,10 @@ export async function POST(request: NextRequest) {
 
     const parsed = parseChatResponse(rawContent, memory);
 
-    // Attach recommendations if location + specialist known
-    if (
-      (parsed.sessionMemory.location.city || parsed.sessionMemory.location.country) &&
-      parsed.sessionMemory.specialist
-    ) {
+    // Attach recommendations if location is known
+    if (parsed.sessionMemory.location.city || parsed.sessionMemory.location.country) {
       const query = {
-        specialty: parsed.sessionMemory.specialist,
+        specialty: parsed.sessionMemory.specialist ?? undefined,
         city: parsed.sessionMemory.location.city ?? undefined,
         country: parsed.sessionMemory.location.country ?? undefined,
       };
@@ -117,7 +114,7 @@ export async function POST(request: NextRequest) {
     clearTimeout(timeoutId);
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[MedNavigator chat] AI call failed:", msg.slice(0, 200));
-    return NextResponse.json(buildMockResponse(memory, locale, sanitizedMessages));
+    return NextResponse.json(await buildMockResponseWithClinics(memory, locale, sanitizedMessages));
   }
 }
 
@@ -130,11 +127,38 @@ interface MockResponse {
   sessionMemory: SessionMemory;
   requestLocation: boolean;
   disclaimer: string;
+  recommendations?: { hospitals: unknown[]; doctors: unknown[] };
 }
 
 // ─── Smart mock ───────────────────────────────────────────────────────────────
 // Used when API key is absent OR request times out.
 // Varies by conversation stage so it never repeats the same message.
+
+async function buildMockResponseWithClinics(
+  memory: SessionMemory,
+  locale: string,
+  messages: ApiMessage[]
+): Promise<MockResponse> {
+  const base = buildMockResponse(memory, locale, messages);
+  // Search clinics for mock if city is known
+  if (base.sessionMemory.location.city) {
+    try {
+      const query = {
+        specialty: base.sessionMemory.specialist ?? undefined,
+        city: base.sessionMemory.location.city,
+        country: base.sessionMemory.location.country ?? undefined,
+      };
+      const [hospitals, doctors] = await Promise.all([
+        hospitalProvider.searchHospitals(query).catch(() => []),
+        doctorProvider.searchDoctors(query).catch(() => []),
+      ]);
+      if (hospitals.length > 0 || doctors.length > 0) {
+        return { ...base, recommendations: { hospitals, doctors } };
+      }
+    } catch { /* ignore */ }
+  }
+  return base;
+}
 
 function buildMockResponse(
   memory: SessionMemory,
@@ -147,6 +171,41 @@ function buildMockResponse(
 
   // Extract symptom keywords from latest user message
   const lastUserText = userMessages[userMessages.length - 1]?.content ?? "";
+  const lowerLast = lastUserText.toLowerCase();
+
+  // Greeting detection — respond naturally without diagnostic flow
+  const greetingWords = ["привет", "здравствуй", "добрый", "hi", "hello", "hey", "good morning", "good evening", "good afternoon", "доброе утро", "добрый день", "добрый вечер"];
+  const isGreeting = stage <= 1 && greetingWords.some((g) => lowerLast.includes(g)) && lastUserText.length < 60;
+  if (isGreeting) {
+    return {
+      message: isRu
+        ? "Здравствуйте! Я ваш AI-помощник по медицинской навигации.\n\nОпишите, что вас беспокоит — симптомы, ощущения, как давно началось — и я помогу разобраться, к какому специалисту обратиться."
+        : "Hello! I'm your AI medical navigation assistant.\n\nTell me what's bothering you — your symptoms, sensations, how long they've been going on — and I'll help you figure out the right next step.",
+      urgency: "low",
+      recommendedSpecialist: null,
+      followUpQuestions: [],
+      sessionMemory: memory,
+      requestLocation: false,
+      disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
+    };
+  }
+
+  // Extract city from user message
+  const cityKeywords: { [key: string]: { city: string; country: string } } = {
+    "москв": { city: "Москва", country: "Россия" },
+    "moscow": { city: "Москва", country: "Россия" },
+    "берлин": { city: "Berlin", country: "Germany" },
+    "berlin": { city: "Berlin", country: "Germany" },
+    "new york": { city: "New York", country: "USA" },
+    "нью-йорк": { city: "New York", country: "USA" },
+    "ташкент": { city: "Ташкент", country: "Узбекистан" },
+    "tashkent": { city: "Ташкент", country: "Узбекистан" },
+  };
+  let detectedCity: { city: string; country: string } | null = null;
+  for (const [kw, loc] of Object.entries(cityKeywords)) {
+    if (lowerLast.includes(kw)) { detectedCity = loc; break; }
+  }
+
   const extractedSymptoms = extractSymptomKeywords(lastUserText, isRu);
   const allSymptoms = Array.from(
     new Set([...memory.symptoms, ...extractedSymptoms])
@@ -161,6 +220,9 @@ function buildMockResponse(
     ...memory,
     symptoms: allSymptoms,
     urgency: urgent ? "high" : memory.urgency ?? "low",
+    location: detectedCity
+      ? { city: detectedCity.city, country: detectedCity.country }
+      : memory.location,
   };
 
   if (urgent) {
