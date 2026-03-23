@@ -33,7 +33,6 @@ export function ChatShell() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageAnalyzing, setImageAnalyzing] = useState(false);
 
   const [voiceMode, setVoiceMode] = useState(false);
@@ -173,25 +172,23 @@ export function ChatShell() {
   const handleOptionSelect = useCallback((_qId: string, value: string) => sendMessage(value), [sendMessage]);
   const handleStarterSelect = useCallback((s: string) => sendMessage(s), [sendMessage]);
 
-  // Image/file upload — reads image, calls vision API, injects extracted text into chat
-  const handleFileAttach = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
+  // Image/file upload — reads file, calls vision API, injects extracted text into chat
   const handleFileChange = useCallback(
     async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      if (!file.type.startsWith("image/")) return;
+      // Accept images and PDFs
+      if (!file.type.startsWith("image/") && file.type !== "application/pdf") return;
 
       setImageAnalyzing(true);
       try {
-        const base64 = await new Promise<string>((resolve) => {
+        const base64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (ev) => {
             const result = ev.target?.result as string;
             resolve(result.split(",")[1]);
           };
+          reader.onerror = reject;
           reader.readAsDataURL(file);
         });
 
@@ -215,7 +212,6 @@ export function ChatShell() {
         console.error("[FileUpload]", err);
       } finally {
         setImageAnalyzing(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
     [locale, sendMessage]
@@ -383,22 +379,14 @@ export function ChatShell() {
               )}
             </AnimatePresence>
 
-            {/* Hidden file input for image upload */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-
-            {/* Input */}
+            {/* Input — file input is now inside ChatInput via label for reliable mobile support */}
             <ChatInput
               value={input}
               onChange={setInput}
               onSend={() => sendMessage(input)}
-              onFileAttach={handleFileAttach}
-              isLoading={isLoading || imageAnalyzing}
+              onFileChange={handleFileChange}
+              isLoading={isLoading}
+              imageAnalyzing={imageAnalyzing}
               isListening={isListening}
               voiceSupported={voiceSupported}
               onVoiceToggle={toggleVoice}

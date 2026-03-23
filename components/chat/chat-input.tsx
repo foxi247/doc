@@ -1,17 +1,18 @@
 "use client";
 
-import { useRef, useEffect, KeyboardEvent } from "react";
+import { useRef, useEffect, KeyboardEvent, ChangeEvent } from "react";
 import { motion } from "framer-motion";
-import { Send, Paperclip, Mic, MicOff } from "lucide-react";
+import { Send, Paperclip, Mic, MicOff, Loader2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
-  onFileAttach?: () => void;
+  onFileChange?: (e: ChangeEvent<HTMLInputElement>) => void;
   isLoading?: boolean;
   disabled?: boolean;
+  imageAnalyzing?: boolean;
   // Voice props
   isListening?: boolean;
   voiceSupported?: boolean;
@@ -22,15 +23,17 @@ export function ChatInput({
   value,
   onChange,
   onSend,
-  onFileAttach,
+  onFileChange,
   isLoading = false,
   disabled = false,
+  imageAnalyzing = false,
   isListening = false,
   voiceSupported = false,
   onVoiceToggle,
 }: ChatInputProps) {
   const { t } = useI18n();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -47,21 +50,39 @@ export function ChatInput({
     }
   };
 
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    onFileChange?.(e);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const canSend = value.trim().length > 0 && !isLoading && !disabled;
 
   return (
     <div className="px-3 pb-4 pt-2">
       <div className="relative flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm transition-shadow focus-within:border-blue-300 focus-within:shadow-md dark:border-slate-700 dark:bg-slate-800 dark:focus-within:border-blue-700">
-        {onFileAttach && (
-          <button
-            type="button"
-            onClick={onFileAttach}
-            disabled={isLoading || disabled}
-            className="mb-1.5 shrink-0 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+        {/* File upload — label wraps hidden input for reliable cross-browser/mobile support */}
+        {onFileChange && (
+          <label
+            className={`mb-1.5 shrink-0 cursor-pointer rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300 ${
+              isLoading || disabled || imageAnalyzing ? "pointer-events-none opacity-50" : ""
+            }`}
             title={t("chat.uploadFile")}
           >
-            <Paperclip className="h-4 w-4" />
-          </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="sr-only"
+              onChange={handleFileChange}
+              disabled={isLoading || disabled || imageAnalyzing}
+            />
+            {imageAnalyzing ? (
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            ) : (
+              <Paperclip className="h-4 w-4" />
+            )}
+          </label>
         )}
 
         <textarea
@@ -111,3 +132,4 @@ export function ChatInput({
     </div>
   );
 }
+

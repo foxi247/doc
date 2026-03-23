@@ -186,56 +186,81 @@ function detectSpecialistFromSymptoms(symptoms: string[], isRu: boolean): string
   return isRu ? "Терапевт" : "General Practitioner";
 }
 
-// ─── Specialist persona messages ──────────────────────────────────────────────
+// ─── Item 4: Specialist persona messages with OPQRST-style questions ──────────
 function specialistIntro(specialist: string, symptoms: string[], isRu: boolean): { message: string; question: string; questionId: string; options: string[] } {
   const symStr = symptoms.slice(0, 4).join(isRu ? ", " : ", ");
+  const symContext = symStr ? (isRu ? ` (${symStr})` : ` (${symStr})`) : "";
 
   if (specialist.toLowerCase().includes("гастро") || specialist.toLowerCase().includes("gastro")) {
     return {
       message: isRu
-        ? `Здравствуйте, я ваш AI-гастроэнтеролог.\n\nИзучил описание: ${symStr}. Ваши симптомы могут указывать на кишечную инфекцию, воспалительный процесс или нарушение моторики кишечника.\n\nМне нужна уточняющая информация:`
-        : `Hello, I'm your AI gastroenterologist.\n\nI've reviewed your symptoms: ${symStr}. These may indicate intestinal infection, inflammatory process, or motility disorder.\n\nI need some clarification:`,
-      question: isRu ? "Как бы вы описали характер боли в животе?" : "How would you describe the abdominal pain?",
+        ? `Здравствуйте, я ваш AI-гастроэнтеролог.\n\nИзучил симптомы${symContext}. Это может указывать на гастрит, синдром раздражённого кишечника, кишечную инфекцию или нарушение моторики.\n\nДля точной оценки мне важно понять характер боли:`
+        : `Hello, I'm your AI gastroenterologist.\n\nI've reviewed your symptoms${symContext}. These may indicate gastritis, irritable bowel syndrome, intestinal infection, or motility disorder.\n\nTo assess accurately, I need to understand the pain character:`,
+      question: isRu ? "Как бы вы описали боль в животе?" : "How would you describe the abdominal pain?",
       questionId: "gastro-q1",
       options: isRu
-        ? ["Постоянная тупая боль", "Приступообразная острая боль", "Спазмы / колики", "Вздутие и дискомфорт"]
-        : ["Constant dull ache", "Sharp, cramping pain", "Spasms / colic", "Bloating and discomfort"],
+        ? ["Постоянная тупая боль / дискомфорт", "Острая приступообразная боль", "Спазмы и колики", "Вздутие без выраженной боли"]
+        : ["Constant dull ache / discomfort", "Sharp cramping pain", "Spasms and colic", "Bloating without significant pain"],
     };
   }
   if (specialist.toLowerCase().includes("невролог") || specialist.toLowerCase().includes("neurolog")) {
     return {
       message: isRu
-        ? `Здравствуйте, я ваш AI-невролог.\n\nПо описанным симптомам (${symStr}) у меня есть несколько уточняющих вопросов:`
-        : `Hello, I'm your AI neurologist.\n\nBased on your symptoms (${symStr}), I have some clarifying questions:`,
-      question: isRu ? "Как бы вы описали характер головной боли?" : "How would you describe the headache?",
+        ? `Здравствуйте, я ваш AI-невролог.\n\nПо симптомам${symContext} несколько возможных причин: мигрень, головная боль напряжения, шейный остеохондроз или сосудистые нарушения.\n\nОпишите характер боли подробнее:`
+        : `Hello, I'm your AI neurologist.\n\nFor your symptoms${symContext}, possible causes include: migraine, tension headache, cervical osteochondrosis, or vascular issues.\n\nDescribe the pain character:`,
+      question: isRu ? "Как бы вы описали головную боль?" : "How would you describe the headache?",
       questionId: "neuro-q1",
       options: isRu
-        ? ["Давящая / опоясывающая", "Пульсирующая (обычно с одной стороны)", "Острая / прострел", "Тупая и постоянная"]
-        : ["Pressing / tight", "Pulsating (usually one side)", "Sharp / shooting", "Dull and constant"],
+        ? ["Давящая / как обруч вокруг головы", "Пульсирующая, обычно с одной стороны", "Острая / резкая", "Тупая и постоянная"]
+        : ["Pressing / like a band around head", "Pulsating, usually one-sided", "Sharp / stabbing", "Dull and constant"],
     };
   }
   if (specialist.toLowerCase().includes("кардиолог") || specialist.toLowerCase().includes("cardiolog")) {
     return {
       message: isRu
-        ? `Здравствуйте, я ваш AI-кардиолог.\n\nВаши симптомы (${symStr}) требуют внимательной оценки. Сначала несколько важных вопросов:`
-        : `Hello, I'm your AI cardiologist.\n\nYour symptoms (${symStr}) require careful evaluation. A few important questions first:`,
-      question: isRu ? "Есть ли отдышка или ощущение сердцебиения?" : "Do you have shortness of breath or palpitations?",
+        ? `Здравствуйте, я ваш AI-кардиолог.\n\nСимптомы${symContext} требуют внимательной оценки. Сердечные симптомы нужно исключать в первую очередь.\n\nУточните важный момент:`
+        : `Hello, I'm your AI cardiologist.\n\nSymptoms${symContext} require careful evaluation. Cardiac causes should be ruled out first.\n\nPlease clarify:`,
+      question: isRu ? "Боль в груди или одышка — когда появляются?" : "When does chest pain or shortness of breath occur?",
       questionId: "cardio-q1",
       options: isRu
-        ? ["Да, при нагрузке", "Да, даже в покое", "Периодически", "Нет"]
-        : ["Yes, with exertion", "Yes, even at rest", "Occasionally", "No"],
+        ? ["При физической нагрузке", "В покое, без нагрузки", "Ночью или утром", "Без явной закономерности"]
+        : ["With physical exertion", "At rest, without exertion", "At night or morning", "No clear pattern"],
     };
   }
-  // Default
+  if (specialist.toLowerCase().includes("ортопед") || specialist.toLowerCase().includes("ревматолог") || specialist.toLowerCase().includes("orthop") || specialist.toLowerCase().includes("rheumatol")) {
+    return {
+      message: isRu
+        ? `Здравствуйте, я ваш AI-ортопед.\n\nПо симптомам${symContext} рассматриваю несколько причин: мышечное перенапряжение, протрузия диска, остеохондроз или межпозвоночная грыжа.\n\nДля уточнения важен характер боли:`
+        : `Hello, I'm your AI orthopedist.\n\nFor symptoms${symContext}, I'm considering: muscle strain, disc protrusion, osteochondrosis, or herniated disc.\n\nThe pain character is important:`,
+      question: isRu ? "Куда отдаёт боль в спине?" : "Does the back pain radiate anywhere?",
+      questionId: "ortho-q1",
+      options: isRu
+        ? ["Только в спине, никуда не отдаёт", "Отдаёт в ногу / бедро", "Отдаёт в шею или плечо", "Опоясывающая боль вокруг туловища"]
+        : ["Only in the back, no radiation", "Radiates to leg / hip", "Radiates to neck or shoulder", "Belt-like pain around the torso"],
+    };
+  }
+  if (specialist.toLowerCase().includes("пульмонолог") || specialist.toLowerCase().includes("pulmonol")) {
+    return {
+      message: isRu
+        ? `Здравствуйте, я ваш AI-пульмонолог.\n\nСимптомы${symContext} могут указывать на бронхит, астму, аллергический или инфекционный кашель.\n\nОпишите кашель подробнее:`
+        : `Hello, I'm your AI pulmonologist.\n\nSymptoms${symContext} may indicate bronchitis, asthma, or allergic/infectious cough.\n\nDescribe the cough:`,
+      question: isRu ? "Какой характер кашля?" : "What type of cough do you have?",
+      questionId: "pulmo-q1",
+      options: isRu
+        ? ["Сухой, без мокроты", "Влажный с мокротой", "Приступообразный (особенно ночью)", "С одышкой или свистом в груди"]
+        : ["Dry, no mucus", "Productive with mucus", "Paroxysmal (especially at night)", "With shortness of breath or wheezing"],
+    };
+  }
+  // Default GP
   return {
     message: isRu
-      ? `Здравствуйте, я ваш AI-${specialist.toLowerCase()}.\n\nПо описанным симптомам (${symStr}) давайте разберёмся подробнее:`
-      : `Hello, I'm your AI ${specialist.toLowerCase()}.\n\nBased on your symptoms (${symStr}), let's explore further:`,
-    question: isRu ? "Симптомы появились впервые или бывали раньше?" : "Are these symptoms new or have you had them before?",
+      ? `Здравствуйте, я ваш AI-${specialist.toLowerCase()}.\n\nПо симптомам${symContext} хочу задать несколько уточняющих вопросов, как на приёме у врача:`
+      : `Hello, I'm your AI ${specialist.toLowerCase()}.\n\nFor your symptoms${symContext}, I'd like to ask a few clarifying questions, just like at a doctor's appointment:`,
+    question: isRu ? "Эти симптомы появились впервые или бывали раньше?" : "Are these symptoms new or have you had them before?",
     questionId: "spec-q1",
     options: isRu
-      ? ["Впервые", "Иногда бывает", "Хронические, есть давно"]
-      : ["First time", "Occasionally", "Chronic, long-standing"],
+      ? ["Впервые в жизни", "Изредка бывает", "Периодически повторяется", "Хронические, давно"]
+      : ["First time ever", "Occasionally", "Recurring periodically", "Chronic, long-standing"],
   };
 }
 
@@ -311,6 +336,42 @@ function buildMockResponse(
   const DOC_KEYWORDS_RU = ["анализ", "результат", "обследован", "снимок", "узи", "мрт", "кт", "рентген", "биохими", "анализов", "анализы", "документ", "выписк", "справк", "направлен"];
   const DOC_KEYWORDS_EN = ["analysis", "result", "lab", "blood test", "scan", "mri", "ct ", "xray", "x-ray", "report", "document", "record", "ultrasound"];
   const isDocumentQuery = (isRu ? DOC_KEYWORDS_RU : DOC_KEYWORDS_EN).some((k) => lowerLast.includes(k));
+
+  // ── Item 6: Uploaded document handling ────────────────────────────────────────
+  // Triggered when vision API extracted text and sent it as [Загружен медицинский документ: ...]
+  const isUploadedDoc = lowerLast.includes("[загружен медицинский документ") || lowerLast.includes("[uploaded medical document");
+  if (isUploadedDoc) {
+    // Extract file name from prefix
+    const nameMatch = lastUserText.match(/\[(?:Загружен медицинский документ|Uploaded medical document): ([^\]]+)\]/);
+    const fileName = nameMatch?.[1] ?? (isRu ? "документ" : "document");
+    // Check if vision API returned no-key message
+    const noKeyMsg = lowerLast.includes("недоступен без api") || lowerLast.includes("unavailable without api");
+    if (noKeyMsg) {
+      return {
+        message: isRu
+          ? `Я вижу, что вы загрузили файл «${fileName}».\n\nАвтоматическое распознавание документов временно недоступно (нет API ключа). Пожалуйста, скопируйте ключевые показатели из документа текстом, и я помогу их интерпретировать.\n\nНапример: «Гемоглобин 98, лейкоциты 11.2, глюкоза 6.8»`
+          : `I see you uploaded "${fileName}".\n\nAutomatic document recognition is temporarily unavailable (no API key). Please copy the key values from the document as text, and I'll help interpret them.\n\nFor example: "Hemoglobin 98, WBC 11.2, glucose 6.8"`,
+        urgency: "low",
+        recommendedSpecialist: null,
+        followUpQuestions: [],
+        sessionMemory: { ...memory, files: [...memory.files, fileName] },
+        requestLocation: false,
+        disclaimer: DISC,
+      };
+    }
+    // Vision API returned actual text → acknowledge and guide
+    return {
+      message: isRu
+        ? `Я изучил документ «${fileName}».\n\nЕсли вы видите выше расшифровку показателей — обратите внимание на значения, отмеченные ↑ (выше нормы) или ↓ (ниже нормы).\n\nРасскажите:\n• Что вас беспокоит в этих результатах?\n• Есть ли симптомы — слабость, головная боль, боли где-то?`
+        : `I've reviewed "${fileName}".\n\nIf you see the extracted values above, pay attention to values marked ↑ (above normal) or ↓ (below normal).\n\nPlease tell me:\n• What concerns you about these results?\n• Do you have any symptoms — fatigue, headaches, pain anywhere?`,
+      urgency: "low",
+      recommendedSpecialist: null,
+      followUpQuestions: [],
+      sessionMemory: { ...memory, files: [...memory.files, fileName] },
+      requestLocation: false,
+      disclaimer: DISC,
+    };
+  }
 
   // ── Symptoms extraction + city detection ─────────────────────────────────────
   const extractedSymptoms = extractSymptomKeywords(lastUserText, isRu);
@@ -616,49 +677,108 @@ function buildSpecialistQA(
   };
 }
 
-function buildCausesMessage(isRu: boolean, symptoms: string[]): string {
-  const causeMap: Record<string, { ru: string[]; en: string[] }> = {
-    "боль в животе": {
-      ru: ["гастроэнтерит (кишечная инфекция)", "синдром раздражённого кишечника", "гастрит или язва", "аппендицит (если боль справа снизу — нужна срочная помощь)"],
-      en: ["gastroenteritis", "irritable bowel syndrome", "gastritis or ulcer", "appendicitis (if lower right pain — seek urgent care)"],
-    },
-    "abdominal pain": {
-      ru: ["боли в животе"],
-      en: ["gastroenteritis", "irritable bowel syndrome", "gastritis"],
-    },
-    "повышенная температура": {
-      ru: ["вирусная инфекция (ОРВИ, грипп)", "бактериальная инфекция", "воспалительный процесс в организме"],
-      en: ["viral infection (flu, cold)", "bacterial infection", "inflammatory condition"],
-    },
-    "fever": {
-      ru: [],
-      en: ["viral infection", "bacterial infection", "inflammatory condition"],
-    },
-    "головная боль": {
-      ru: ["мигрень", "напряжение (стресс, усталость)", "повышенное/пониженное давление", "обезвоживание"],
-      en: ["migraine", "tension headache", "blood pressure changes", "dehydration"],
-    },
-    "headache": {
-      ru: [],
-      en: ["migraine", "tension headache", "blood pressure changes"],
-    },
-    "отёки": {
-      ru: ["нарушение работы почек", "проблемы с сердечно-сосудистой системой", "аллергическая реакция", "длительное пребывание в одной позе"],
-      en: ["kidney issues", "cardiovascular problems", "allergic reaction", "prolonged immobility"],
-    },
-    "слабость": {
-      ru: ["анемия (нехватка железа)", "вирусная инфекция", "дефицит витаминов", "нарушение сна"],
-      en: ["anemia", "viral infection", "vitamin deficiency", "sleep disorder"],
-    },
-  };
+// ── Item 5: Differential diagnosis causes ─────────────────────────────────────
+// Key = exact symptom name as stored in symptoms array (from extractSymptomKeywords output)
+const CAUSE_MAP: Record<string, { ru: string[]; en: string[] }> = {
+  "боль в животе": {
+    ru: ["Гастроэнтерит (кишечная инфекция) — тошнота, диарея, температура", "Синдром раздражённого кишечника — спазмы, вздутие, нарушение стула", "Гастрит или язва желудка — боль после еды/натощак", "Аппендицит — острая боль справа снизу (требует срочной помощи)"],
+    en: ["Gastroenteritis — nausea, diarrhea, fever", "Irritable bowel syndrome — cramping, bloating, irregular stools", "Gastritis or peptic ulcer — pain after meals or on empty stomach", "Appendicitis — acute right lower pain (urgent care needed)"],
+  },
+  "abdominal pain": {
+    ru: ["Гастроэнтерит", "Синдром раздражённого кишечника", "Гастрит или язва"],
+    en: ["Gastroenteritis — nausea, diarrhea", "Irritable bowel syndrome — cramping, bloating", "Gastritis or peptic ulcer — pain after meals"],
+  },
+  "stomach pain": {
+    ru: ["Гастрит или язва желудка", "Гастроэнтерит", "Синдром раздражённого кишечника"],
+    en: ["Gastritis or peptic ulcer", "Gastroenteritis", "Irritable bowel syndrome"],
+  },
+  "повышенная температура": {
+    ru: ["Вирусная инфекция (ОРВИ, грипп) — наиболее вероятно при температуре до 38.5°C", "Бактериальная инфекция — температура выше 38.5°C, не сбивается", "Воспалительный процесс в организме — хроническое заболевание"],
+    en: ["Viral infection (flu, cold) — most likely if under 38.5°C", "Bacterial infection — temperature above 38.5°C, resistant to antipyretics", "Inflammatory condition — chronic disease"],
+  },
+  "fever": {
+    ru: [],
+    en: ["Viral infection (flu, cold)", "Bacterial infection", "Inflammatory condition"],
+  },
+  "головная боль": {
+    ru: ["Мигрень — пульсирующая боль с одной стороны, часто с тошнотой и светобоязнью", "Головная боль напряжения — давящая по всей голове, от стресса и усталости", "Повышенное/пониженное давление — измерьте тонометром", "Обезвоживание — пейте больше воды"],
+    en: ["Migraine — pulsating one-sided pain, often with nausea and light sensitivity", "Tension headache — pressing pain throughout head, from stress and fatigue", "Blood pressure changes — check with a blood pressure monitor", "Dehydration — increase fluid intake"],
+  },
+  "headache": {
+    ru: [],
+    en: ["Migraine — pulsating one-sided pain, nausea, light sensitivity", "Tension headache — pressing pain, stress-related", "Blood pressure changes — measure with a monitor", "Dehydration — drink more water"],
+  },
+  "боль в спине": {
+    ru: ["Мышечное перенапряжение / растяжение — чаще при физической нагрузке или неправильной позе", "Протрузия или грыжа межпозвоночного диска — боль с отдачей в ногу (ишиас)", "Остеохондроз — хроническая дегенерация позвоночника, чаще у взрослых", "Спазм мышц спины — острая боль при движении, проходит с покоем", "Почечная колика — острая боль в пояснице сбоку (если есть проблемы с почками)"],
+    en: ["Muscle strain or spasm — often after physical exertion or poor posture", "Herniated disc — pain radiating down the leg (sciatica)", "Osteoarthritis / osteochondrosis — chronic spinal degeneration", "Facet joint syndrome — pain with twisting or bending", "Kidney stones — sharp flank pain if kidney issues suspected"],
+  },
+  "back pain": {
+    ru: [],
+    en: ["Muscle strain or spasm — after exertion or poor posture", "Herniated disc — pain radiating down leg (sciatica)", "Osteoarthritis / spinal degeneration", "Facet joint syndrome — pain with twisting", "Kidney stones — if sharp flank pain"],
+  },
+  "мигрень": {
+    ru: ["Классическая мигрень — триггеры: стресс, недосып, гормональные изменения, определённые продукты", "Шейная мигрень (цервикогенная) — от проблем в шейном отделе позвоночника", "Мигрень с аурой — перед болью появляются визуальные эффекты, онемение"],
+    en: ["Classic migraine — triggers: stress, sleep deprivation, hormonal changes, certain foods", "Cervicogenic headache — from cervical spine problems", "Migraine with aura — visual disturbances, numbness before pain"],
+  },
+  "кашель": {
+    ru: ["ОРВИ / простуда — сухой или влажный кашель при вирусной инфекции", "Бронхит — влажный кашель с мокротой, часто после ОРВИ", "Бронхиальная астма — приступообразный кашель, особенно ночью или после нагрузки", "Аллергический кашель — сухой, без температуры, сезонный или на аллерген"],
+    en: ["URTI / cold — dry or productive cough with viral infection", "Bronchitis — productive cough, often post-cold", "Bronchial asthma — paroxysmal cough, especially at night or after exertion", "Allergic cough — dry, without fever, seasonal or allergen-triggered"],
+  },
+  "cough": {
+    ru: [],
+    en: ["URTI / common cold — dry or productive cough", "Bronchitis — productive cough after infection", "Bronchial asthma — paroxysmal, nocturnal cough", "Allergic cough — dry, without fever"],
+  },
+  "тошнота": {
+    ru: ["Гастрит или рефлюкс (ГЭРБ) — особенно утром или после жирной еды", "Вирусная инфекция ЖКТ (ротавирус, норовирус)", "Вегетативная дисфункция (ВСД) — тошнота при стрессе или переутомлении", "Лекарственные эффекты — побочное действие некоторых препаратов"],
+    en: ["Gastritis or reflux (GERD) — especially in the morning or after fatty food", "Viral gastrointestinal infection (rotavirus, norovirus)", "Autonomic dysfunction — nausea with stress or exhaustion", "Medication side effects — check current medications"],
+  },
+  "nausea": {
+    ru: [],
+    en: ["Gastritis or GERD — especially in the morning or after meals", "Viral gastrointestinal infection", "Motion sickness or vertigo", "Medication side effects"],
+  },
+  "слабость": {
+    ru: ["Анемия (снижение гемоглобина) — слабость, бледность, одышка при нагрузке", "Дефицит витамина D или B12 — хроническая усталость, особенно зимой", "Вирусная инфекция или постковидный синдром", "Нарушение сна / хроническое переутомление", "Гипотиреоз — сниженная функция щитовидной железы"],
+    en: ["Anemia — weakness, pallor, exertional shortness of breath", "Vitamin D or B12 deficiency — chronic fatigue, especially in winter", "Viral infection or post-COVID syndrome", "Sleep disorder / chronic fatigue", "Hypothyroidism — underactive thyroid"],
+  },
+  "fatigue": {
+    ru: [],
+    en: ["Anemia — check hemoglobin levels", "Vitamin D or B12 deficiency", "Post-viral syndrome or post-COVID", "Chronic fatigue syndrome / sleep disorder", "Hypothyroidism — underactive thyroid"],
+  },
+  "головокружение": {
+    ru: ["Доброкачественное позиционное головокружение (ДППГ) — при повороте головы", "Вестибулярный неврит — резкое головокружение после инфекции", "Снижение давления (гипотония) — особенно при вставании", "Анемия — недостаток кислорода в крови"],
+    en: ["Benign paroxysmal positional vertigo (BPPV) — on head movement", "Vestibular neuritis — sudden vertigo after infection", "Low blood pressure (hypotension) — especially on standing", "Anemia — reduced oxygen in blood"],
+  },
+  "dizziness": {
+    ru: [],
+    en: ["BPPV — vertigo on head movement", "Vestibular neuritis — after infection", "Low blood pressure — especially on standing", "Anemia — check hemoglobin"],
+  },
+  "давление": {
+    ru: ["Гипертоническая болезнь — хроническое повышение давления", "Вторичная гипертензия — из-за почечных или эндокринных заболеваний", "Гипотония — пониженное давление, слабость, головокружение"],
+    en: ["Essential hypertension — chronic elevated blood pressure", "Secondary hypertension — due to kidney or endocrine disease", "Hypotension — low pressure, weakness, dizziness"],
+  },
+  "high pressure": {
+    ru: [],
+    en: ["Essential hypertension — chronic elevated blood pressure", "Secondary hypertension", "White coat hypertension — anxiety-related"],
+  },
+  "боль в груди": {
+    ru: ["Стенокардия или ОКС — боль при нагрузке, отдаёт в руку/челюсть (СРОЧНО к врачу)", "Плеврит — боль при дыхании, после инфекции", "Остеохондроз грудного отдела — боль при движении", "Гастроэзофагеальный рефлюкс — жжение за грудиной после еды"],
+    en: ["Angina or ACS — chest pain on exertion, may radiate to arm/jaw (URGENT)", "Pleuritis — pain on breathing, post-infection", "Thoracic osteochondrosis — pain with movement", "GERD — burning behind sternum after eating"],
+  },
+  "chest pain": {
+    ru: [],
+    en: ["Angina or ACS — on exertion, may radiate to arm/jaw (URGENT)", "Pleuritis — pain on breathing", "Costochondritis — chest wall pain, reproduced by palpation", "GERD — burning after eating"],
+  },
+};
 
+function buildCausesMessage(isRu: boolean, symptoms: string[]): string {
   const allCauses = new Set<string>();
+
   for (const sym of symptoms) {
-    const key = Object.keys(causeMap).find((k) =>
-      sym.toLowerCase().includes(k) || k.includes(sym.toLowerCase().split(" ")[0])
-    );
+    const symLower = sym.toLowerCase();
+    // Exact match first, then partial (symptom contains key, not the other way around)
+    const key = Object.keys(CAUSE_MAP).find((k) => symLower === k || symLower.includes(k));
     if (key) {
-      const causes = isRu ? causeMap[key].ru : causeMap[key].en;
+      const causes = isRu ? CAUSE_MAP[key].ru : CAUSE_MAP[key].en;
       causes.forEach((c) => allCauses.add(c));
     }
   }
@@ -668,20 +788,32 @@ function buildCausesMessage(isRu: boolean, symptoms: string[]): string {
 
   if (causeList.length === 0) {
     return isRu
-      ? `На основе симптомов (${symStr}) сложно назвать конкретные причины без осмотра врача. Рекомендую обратиться к терапевту, который проведёт необходимые обследования и поставит точный диагноз.\n\n⚠️ Помните: только врач может поставить диагноз.`
-      : `Based on symptoms (${symStr}), specific causes are hard to determine without examination. I recommend seeing a general practitioner who will conduct the necessary tests.\n\n⚠️ Only a doctor can provide a diagnosis.`;
+      ? `На основе описанных симптомов${symStr ? ` (${symStr})` : ""} сложно определить точные причины без осмотра.\n\nРекомендую обратиться к терапевту — он проведёт осмотр, назначит анализы и поставит точный диагноз.\n\n⚠️ Только врач может поставить диагноз.`
+      : `Based on the described symptoms${symStr ? ` (${symStr})` : ""}, specific causes are hard to determine without examination.\n\nI recommend seeing a general practitioner for a physical exam and tests.\n\n⚠️ Only a doctor can diagnose.`;
   }
 
   const list = causeList.map((c) => `• ${c}`).join("\n");
-  return isRu
-    ? `На основе симптомов (${symStr}) возможные причины могут включать:\n\n${list}\n\n⚠️ Это информационный перечень, а не диагноз. Для точного ответа необходим осмотр и обследование у врача.`
-    : `Based on symptoms (${symStr}), possible causes may include:\n\n${list}\n\n⚠️ This is informational only, not a diagnosis. A doctor's examination is needed for an accurate answer.`;
+  const header = isRu
+    ? `Наиболее вероятные причины${symStr ? ` при симптомах (${symStr})` : ""}:\n\n${list}`
+    : `Most likely causes${symStr ? ` for symptoms (${symStr})` : ""}:\n\n${list}`;
+
+  return `${header}\n\n⚠️ ${isRu ? "Это дифференциальный список для ориентира, а не диагноз. Точный диагноз ставит только врач после осмотра и анализов." : "This is a differential list for reference only, not a diagnosis. Only a doctor can diagnose after examination and tests."}`;
 }
 
+// ── Item 7: Expanded red flag / emergency detection ───────────────────────────
 const URGENT_KEYWORDS = [
-  "боль в груди", "chest pain", "не могу дышать", "can't breathe",
-  "инсульт", "stroke", "потерял сознание", "unconscious",
-  "сильное кровотечение", "severe bleeding", "давление", "pressure in chest",
+  // Cardiac
+  "боль в груди", "chest pain", "жжение за грудиной", "боль отдаёт в руку", "боль в левой руке",
+  // Breathing
+  "не могу дышать", "can't breathe", "задыхаюсь", "нехватка воздуха", "shortness of breath",
+  // Neurological
+  "инсульт", "stroke", "потерял сознание", "unconscious", "не могу говорить", "онемела рука",
+  "перекосило лицо", "face drooping", "arm weakness", "sudden severe headache",
+  // Bleeding
+  "сильное кровотечение", "severe bleeding", "рвота кровью", "кровь из", "vomiting blood",
+  // Other emergencies
+  "потеря сознания", "судороги", "seizure", "анафилакс", "anaphylax",
+  "острая боль в животе", "острый живот", "острая боль",
 ];
 
 function extractSymptomKeywords(text: string, isRu: boolean): string[] {
