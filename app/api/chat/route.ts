@@ -307,11 +307,31 @@ function buildMockResponse(
     };
   }
 
+  // ── Document / test-result query detection ───────────────────────────────────
+  const DOC_KEYWORDS_RU = ["анализ", "результат", "обследован", "снимок", "узи", "мрт", "кт", "рентген", "биохими", "анализов", "анализы", "документ", "выписк", "справк", "направлен"];
+  const DOC_KEYWORDS_EN = ["analysis", "result", "lab", "blood test", "scan", "mri", "ct ", "xray", "x-ray", "report", "document", "record", "ultrasound"];
+  const isDocumentQuery = (isRu ? DOC_KEYWORDS_RU : DOC_KEYWORDS_EN).some((k) => lowerLast.includes(k));
+
   // ── Symptoms extraction + city detection ─────────────────────────────────────
   const extractedSymptoms = extractSymptomKeywords(lastUserText, isRu);
   const allSymptoms = Array.from(new Set([...memory.symptoms, ...extractedSymptoms]));
 
   const urgent = URGENT_KEYWORDS.some((k) => lowerLast.includes(k));
+
+  // ── Document query with no symptoms → ask to describe or upload ──────────────
+  if (isDocumentQuery && allSymptoms.length === 0 && !memory.specialist) {
+    return {
+      message: isRu
+        ? "Понял, вы хотите обсудить медицинские документы или результаты анализов.\n\nЕсть два способа:\n• Нажмите кнопку 📎 и загрузите фото документа — я прочитаю его автоматически\n• Или опишите ключевые показатели текстом\n\nКакие именно анализы или результаты вас интересуют?"
+        : "I see you'd like to discuss medical documents or test results.\n\nTwo ways to proceed:\n• Tap the 📎 button to upload a photo — I'll read it automatically\n• Or describe the key values in text\n\nWhich test results or documents would you like to discuss?",
+      urgency: "low",
+      recommendedSpecialist: null,
+      followUpQuestions: [],
+      sessionMemory: { ...memory, symptoms: allSymptoms },
+      requestLocation: false,
+      disclaimer: DISC,
+    };
+  }
 
   // Was the previous AI message asking for city?
   const allMessages = messages;
@@ -354,9 +374,7 @@ function buildMockResponse(
   }
 
   const specialist = updatedMemory.specialist ?? (isRu ? "Терапевт" : "General Practitioner");
-  const symStr = allSymptoms.length > 0
-    ? allSymptoms.slice(0, 5).join(isRu ? ", " : ", ")
-    : isRu ? "ваши симптомы" : "your symptoms";
+  const symStr = allSymptoms.slice(0, 5).join(isRu ? ", " : ", ");
 
   // ── City confirmed / changed ─────────────────────────────────────────────────
   if (cityJustSet || cityChanged) {
@@ -457,10 +475,11 @@ function buildMockResponse(
   if (stage === 3) {
     const detectedSpec = detectSpecialistFromSymptoms(allSymptoms, isRu);
     updatedMemory.specialist = detectedSpec;
+    const symContext = symStr ? (isRu ? ` (${symStr})` : ` (${symStr})`) : "";
     return {
       message: isRu
-        ? `Понял. Исходя из описанных симптомов (${symStr}), рекомендую консультацию специалиста — ${detectedSpec}.\n\nПозвольте уточнить подробности у специалиста. Продолжаем...`
-        : `Got it. Based on your symptoms (${symStr}), I recommend seeing a ${detectedSpec}.\n\nLet me connect you with a specialist for more details.`,
+        ? `Понял. Исходя из описанных симптомов${symContext}, рекомендую консультацию специалиста — ${detectedSpec}.\n\nПозвольте уточнить подробности у специалиста. Продолжаем...`
+        : `Got it. Based on your symptoms${symContext}, I recommend seeing a ${detectedSpec}.\n\nLet me connect you with a specialist for more details.`,
       urgency: "medium",
       recommendedSpecialist: detectedSpec,
       followUpQuestions: [{
@@ -477,10 +496,11 @@ function buildMockResponse(
 
   // ── Stage 2: duration → ask severity ──────────────────────────────────────────
   if (stage === 2) {
+    const symNote = symStr ? (isRu ? ` Симптомы: ${symStr}.` : ` Symptoms noted: ${symStr}.`) : "";
     return {
       message: isRu
-        ? `Понял. Симптомы: ${symStr}. Насколько сильно это влияет на вашу повседневную жизнь?`
-        : `I see. Symptoms: ${symStr}. How much is this affecting your daily life?`,
+        ? `Понял.${symNote} Насколько сильно это влияет на вашу повседневную жизнь?`
+        : `I see.${symNote} How much is this affecting your daily life?`,
       urgency: "low",
       recommendedSpecialist: null,
       followUpQuestions: [{
@@ -498,8 +518,12 @@ function buildMockResponse(
   // ── Stage 1: first symptoms message ───────────────────────────────────────────
   return {
     message: isRu
-      ? `Я отметил ваши симптомы: ${symStr}.\n\nКак долго они продолжаются?`
-      : `I've noted your symptoms: ${symStr}.\n\nHow long have you been experiencing this?`,
+      ? (symStr
+          ? `Я отметил ваши симптомы: ${symStr}.\n\nКак долго они продолжаются?`
+          : "Понял. Расскажите подробнее — что именно вас беспокоит? Опишите симптомы, ощущения или что произошло.")
+      : (symStr
+          ? `I've noted your symptoms: ${symStr}.\n\nHow long have you been experiencing this?`
+          : "Understood. Could you describe in more detail what's bothering you? Please tell me your symptoms, sensations, or what happened."),
     urgency: "low",
     recommendedSpecialist: null,
     followUpQuestions: [{

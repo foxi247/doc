@@ -31,10 +31,38 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const prompt =
-    language === "ru"
-      ? "Ты медицинский ассистент. Внимательно прочитай этот медицинский документ или результат анализа. Извлеки всю информацию: показатели, значения, нормы, диагнозы, заключения. Ответь чётко и структурированно на русском языке."
-      : "You are a medical assistant. Carefully read this medical document or test result. Extract all information: indicators, values, normal ranges, diagnoses, conclusions. Respond clearly and in a structured way in English.";
+  // Map locale to response language name for the prompt
+  const LANG_NAMES: Record<string, string> = {
+    ru: "русском языке",
+    en: "English",
+    de: "Deutsch",
+    uz: "o'zbek tilida",
+    ar: "اللغة العربية",
+    es: "español",
+  };
+  const responseLang = LANG_NAMES[language] ?? "English";
+
+  const prompt = language === "ru"
+    ? `Ты опытный медицинский ассистент. Перед тобой медицинский документ или результат анализа — он может быть на любом языке (русском, английском, немецком, арабском и т.д.).
+
+Твоя задача:
+1. Прочитай весь документ, независимо от его языка
+2. Извлеки ВСЕ показатели, значения, единицы измерения
+3. Для каждого показателя укажи норму и отметь отклонения (↑ выше нормы / ↓ ниже нормы)
+4. Выдели показатели, требующие внимания врача
+5. Напиши краткое заключение
+
+Отвечай ТОЛЬКО на русском языке, структурированно.`
+    : `You are an experienced medical assistant. You are looking at a medical document or lab result — it may be in any language (Russian, English, German, Arabic, etc.).
+
+Your task:
+1. Read the entire document regardless of its language
+2. Extract ALL indicators, values, and units of measurement
+3. For each indicator, state the normal range and mark deviations (↑ above normal / ↓ below normal)
+4. Highlight indicators requiring medical attention
+5. Write a brief conclusion
+
+Respond ONLY in ${responseLang}, in a structured format.`;
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
