@@ -121,6 +121,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ─── Shared response type ─────────────────────────────────────────────────────
+interface MockResponse {
+  message: string;
+  urgency: "low" | "medium" | "high";
+  recommendedSpecialist: string | null;
+  followUpQuestions: { id: string; question: string; type: "single-choice" | "multi-choice" | "free-text"; options?: string[] }[];
+  sessionMemory: SessionMemory;
+  requestLocation: boolean;
+  disclaimer: string;
+}
+
 // ─── Smart mock ───────────────────────────────────────────────────────────────
 // Used when API key is absent OR request times out.
 // Varies by conversation stage so it never repeats the same message.
@@ -129,7 +140,7 @@ function buildMockResponse(
   memory: SessionMemory,
   locale: string,
   messages: ApiMessage[]
-) {
+): MockResponse {
   const isRu = locale === "ru";
   const userMessages = messages.filter((m) => m.role === "user");
   const stage = userMessages.length; // how many user turns so far
@@ -166,7 +177,20 @@ function buildMockResponse(
     };
   }
 
-  // Stage-based conversation flow
+  // Stage 4+: respond intelligently to user's actual message
+  if (stage >= 4) {
+    const freeResponse = buildFreeResponse(isRu, lastUserText, allSymptoms, memory);
+    if (freeResponse) {
+      return {
+        ...freeResponse,
+        sessionMemory: updatedMemory,
+        requestLocation: !memory.location.city,
+        disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
+      };
+    }
+  }
+
+  // Stage-based conversation flow (stages 1-3)
   const stages = buildStages(isRu, allSymptoms, memory);
   const stageData = stages[Math.min(stage - 1, stages.length - 1)] ?? stages[stages.length - 1];
 
@@ -179,6 +203,159 @@ function buildMockResponse(
     requestLocation: stage >= 3,
     disclaimer: isRu ? "Это не диагноз. Всегда консультируйтесь с врачом." : "Not a diagnosis. Always consult a physician.",
   };
+}
+
+// ─── Free response for stage 4+ questions ─────────────────────────────────────
+type FreeResponse = Omit<MockResponse, "sessionMemory" | "requestLocation" | "disclaimer">;
+
+function buildFreeResponse(
+  isRu: boolean,
+  userText: string,
+  symptoms: string[],
+  memory: SessionMemory
+): FreeResponse | null {
+  const lower = userText.toLowerCase();
+  const symStr = symptoms.join(isRu ? ", " : ", ");
+  const specialist = memory.specialist ?? (isRu ? "терапевта" : "a general practitioner");
+
+  // Asking about possible causes
+  if (
+    lower.includes("причин") || lower.includes("почему") ||
+    lower.includes("что это") || lower.includes("causes") ||
+    lower.includes("why") || lower.includes("what could") ||
+    lower.includes("можете помочь") || lower.includes("can you help")
+  ) {
+    const causes = buildCausesMessage(isRu, symptoms);
+    return {
+      message: causes,
+      urgency: memory.urgency as "low" | "medium" | "high" ?? "medium",
+      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
+      followUpQuestions: [{
+        id: "next-step",
+        question: isRu ? "Что хотите сделать дальше?" : "What would you like to do next?",
+        type: "single-choice" as const,
+        options: isRu
+          ? ["Найти клинику рядом", "Что взять с собой к врачу", "Задать ещё вопрос"]
+          : ["Find a nearby clinic", "What to bring to the doctor", "Ask another question"],
+      }],
+    };
+  }
+
+  // Asking for clinic/hospital help
+  if (
+    lower.includes("клиник") || lower.includes("больниц") || lower.includes("врач") ||
+    lower.includes("clinic") || lower.includes("hospital") || lower.includes("doctor")
+  ) {
+    return {
+      message: isRu
+        ? `Чтобы подобрать клинику в вашем городе (${memory.location.city ?? "укажите город"}), порекомендую обратиться к ${specialist}. Если нужно — уточните город и я помогу с поиском.`
+        : `To find a clinic near you (${memory.location.city ?? "please specify your city"}), I recommend seeing ${specialist}. Tell me your city and I'll help search.`,
+      urgency: "medium" as const,
+      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
+      followUpQuestions: [],
+    };
+  }
+
+  // What to prepare for the doctor
+  if (
+    lower.includes("взять") || lower.includes("подготов") || lower.includes("prepare") ||
+    lower.includes("bring") || lower.includes("before")
+  ) {
+    return {
+      message: isRu
+        ? `Перед визитом к ${specialist} рекомендую:\n\n• Записать все симптомы: ${symStr}\n• Отметить когда началось и как менялось\n• Взять результаты предыдущих анализов, если есть\n• Список принимаемых лекарств\n• Паспорт и полис (при наличии)`
+        : `Before seeing ${specialist}, prepare:\n\n• List your symptoms: ${symStr}\n• Note when it started and how it changed\n• Bring previous test results if any\n• List of current medications\n• ID and insurance card`,
+      urgency: "low" as const,
+      recommendedSpecialist: memory.specialist ?? (isRu ? "Терапевт" : "General Practitioner"),
+      followUpQuestions: [],
+    };
+  }
+
+  // Frustration / "you can answer?" / repeat question
+  if (
+    lower.includes("ответить") || lower.includes("слышите") || lower.includes("там") ||
+    lower.includes("are you") || lower.includes("answer me") || lower.includes("hello")
+  ) {
+    return {
+      message: isRu
+        ? `Да, я здесь! Прошу прощения, если мои ответы казались однотипными.\n\nНа основе того, что вы описали (${symStr}), я могу помочь:\n• Объяснить возможные причины симптомов\n• Найти клинику в вашем городе\n• Подсказать, что взять на приём\n• Ответить на конкретный вопрос\n\nЧто вас интересует?`
+        : `Yes, I'm here! Sorry if my responses felt repetitive.\n\nBased on what you described (${symStr}), I can help you:\n• Explain possible causes\n• Find a clinic near you\n• Suggest what to bring to the appointment\n• Answer a specific question\n\nWhat would you like?`,
+      urgency: memory.urgency as "low" | "medium" | "high" ?? "low",
+      recommendedSpecialist: memory.specialist,
+      followUpQuestions: [{
+        id: "help-type",
+        question: isRu ? "Чем могу помочь?" : "How can I help?",
+        type: "single-choice" as const,
+        options: isRu
+          ? ["Возможные причины", "Найти клинику", "Что взять к врачу", "Другой вопрос"]
+          : ["Possible causes", "Find a clinic", "Prepare for visit", "Other question"],
+      }],
+    };
+  }
+
+  return null;
+}
+
+function buildCausesMessage(isRu: boolean, symptoms: string[]): string {
+  const causeMap: Record<string, { ru: string[]; en: string[] }> = {
+    "боль в животе": {
+      ru: ["гастроэнтерит (кишечная инфекция)", "синдром раздражённого кишечника", "гастрит или язва", "аппендицит (если боль справа снизу — нужна срочная помощь)"],
+      en: ["gastroenteritis", "irritable bowel syndrome", "gastritis or ulcer", "appendicitis (if lower right pain — seek urgent care)"],
+    },
+    "abdominal pain": {
+      ru: ["боли в животе"],
+      en: ["gastroenteritis", "irritable bowel syndrome", "gastritis"],
+    },
+    "повышенная температура": {
+      ru: ["вирусная инфекция (ОРВИ, грипп)", "бактериальная инфекция", "воспалительный процесс в организме"],
+      en: ["viral infection (flu, cold)", "bacterial infection", "inflammatory condition"],
+    },
+    "fever": {
+      ru: [],
+      en: ["viral infection", "bacterial infection", "inflammatory condition"],
+    },
+    "головная боль": {
+      ru: ["мигрень", "напряжение (стресс, усталость)", "повышенное/пониженное давление", "обезвоживание"],
+      en: ["migraine", "tension headache", "blood pressure changes", "dehydration"],
+    },
+    "headache": {
+      ru: [],
+      en: ["migraine", "tension headache", "blood pressure changes"],
+    },
+    "отёки": {
+      ru: ["нарушение работы почек", "проблемы с сердечно-сосудистой системой", "аллергическая реакция", "длительное пребывание в одной позе"],
+      en: ["kidney issues", "cardiovascular problems", "allergic reaction", "prolonged immobility"],
+    },
+    "слабость": {
+      ru: ["анемия (нехватка железа)", "вирусная инфекция", "дефицит витаминов", "нарушение сна"],
+      en: ["anemia", "viral infection", "vitamin deficiency", "sleep disorder"],
+    },
+  };
+
+  const allCauses = new Set<string>();
+  for (const sym of symptoms) {
+    const key = Object.keys(causeMap).find((k) =>
+      sym.toLowerCase().includes(k) || k.includes(sym.toLowerCase().split(" ")[0])
+    );
+    if (key) {
+      const causes = isRu ? causeMap[key].ru : causeMap[key].en;
+      causes.forEach((c) => allCauses.add(c));
+    }
+  }
+
+  const causeList = Array.from(allCauses).slice(0, 6);
+  const symStr = symptoms.join(isRu ? ", " : ", ");
+
+  if (causeList.length === 0) {
+    return isRu
+      ? `На основе симптомов (${symStr}) сложно назвать конкретные причины без осмотра врача. Рекомендую обратиться к терапевту, который проведёт необходимые обследования и поставит точный диагноз.\n\n⚠️ Помните: только врач может поставить диагноз.`
+      : `Based on symptoms (${symStr}), specific causes are hard to determine without examination. I recommend seeing a general practitioner who will conduct the necessary tests.\n\n⚠️ Only a doctor can provide a diagnosis.`;
+  }
+
+  const list = causeList.map((c) => `• ${c}`).join("\n");
+  return isRu
+    ? `На основе симптомов (${symStr}) возможные причины могут включать:\n\n${list}\n\n⚠️ Это информационный перечень, а не диагноз. Для точного ответа необходим осмотр и обследование у врача.`
+    : `Based on symptoms (${symStr}), possible causes may include:\n\n${list}\n\n⚠️ This is informational only, not a diagnosis. A doctor's examination is needed for an accurate answer.`;
 }
 
 const URGENT_KEYWORDS = [

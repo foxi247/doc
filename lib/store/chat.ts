@@ -18,12 +18,13 @@ export interface ChatMessage {
     doctors: DoctorResult[];
   };
   isLoading?: boolean;
-  isNew?: boolean; // triggers typewriter animation
+  isNew?: boolean;
 }
 
 export interface ChatSession {
   id: string;
-  preview: string; // first user message snippet
+  name: string;        // user-editable
+  preview: string;     // first user message
   timestamp: number;
   messageCount: number;
 }
@@ -32,13 +33,18 @@ interface ChatStore {
   messages: ChatMessage[];
   memory: SessionMemory;
   isLoading: boolean;
-  history: ChatSession[]; // past sessions
+  history: ChatSession[];
+  /** ID of history session being displayed (null = current live chat) */
+  activeHistoryId: string | null;
+
   addMessage: (msg: Omit<ChatMessage, "id" | "timestamp">) => string;
   updateLastAssistantMessage: (updates: Partial<ChatMessage>) => void;
   markMessageRead: (id: string) => void;
   updateMemory: (updates: Partial<SessionMemory>) => void;
   setLoading: (loading: boolean) => void;
-  reset: () => void; // saves current session to history
+  reset: () => void;
+  renameSession: (id: string, name: string) => void;
+  deleteSession: (id: string) => void;
 }
 
 const defaultMemory: SessionMemory = {
@@ -56,21 +62,19 @@ export const useChatStore = create<ChatStore>()(
       memory: defaultMemory,
       isLoading: false,
       history: [],
+      activeHistoryId: null,
 
       addMessage: (msg) => {
         const id = crypto.randomUUID();
-        set((state) => ({
-          messages: [
-            ...state.messages,
-            { ...msg, id, timestamp: Date.now() },
-          ],
+        set((s) => ({
+          messages: [...s.messages, { ...msg, id, timestamp: Date.now() }],
         }));
         return id;
       },
 
       updateLastAssistantMessage: (updates) => {
-        set((state) => {
-          const msgs = [...state.messages];
+        set((s) => {
+          const msgs = [...s.messages];
           for (let i = msgs.length - 1; i >= 0; i--) {
             if (msgs[i].role === "assistant") {
               msgs[i] = { ...msgs[i], ...updates };
@@ -82,27 +86,25 @@ export const useChatStore = create<ChatStore>()(
       },
 
       markMessageRead: (id) => {
-        set((state) => ({
-          messages: state.messages.map((m) =>
-            m.id === id ? { ...m, isNew: false } : m
-          ),
+        set((s) => ({
+          messages: s.messages.map((m) => (m.id === id ? { ...m, isNew: false } : m)),
         }));
       },
 
       updateMemory: (updates) => {
-        set((state) => ({
+        set((s) => ({
           memory: {
-            ...state.memory,
+            ...s.memory,
             ...updates,
             location: updates.location
-              ? { ...state.memory.location, ...updates.location }
-              : state.memory.location,
+              ? { ...s.memory.location, ...updates.location }
+              : s.memory.location,
             symptoms: updates.symptoms
-              ? Array.from(new Set([...state.memory.symptoms, ...updates.symptoms]))
-              : state.memory.symptoms,
+              ? Array.from(new Set([...s.memory.symptoms, ...updates.symptoms]))
+              : s.memory.symptoms,
             files: updates.files
-              ? Array.from(new Set([...state.memory.files, ...updates.files]))
-              : state.memory.files,
+              ? Array.from(new Set([...s.memory.files, ...updates.files]))
+              : s.memory.files,
           },
         }));
       },
@@ -110,34 +112,40 @@ export const useChatStore = create<ChatStore>()(
       setLoading: (loading) => set({ isLoading: loading }),
 
       reset: () => {
-        const state = get();
-        const userMsgs = state.messages.filter((m) => m.role === "user" && !m.isLoading);
-        // Save current session to history if it has user messages
+        const { messages } = get();
+        const userMsgs = messages.filter((m) => m.role === "user" && !m.isLoading);
         if (userMsgs.length > 0) {
           const preview = userMsgs[0].content.slice(0, 60);
           const session: ChatSession = {
             id: crypto.randomUUID(),
+            name: preview,
             preview,
             timestamp: Date.now(),
-            messageCount: state.messages.filter((m) => !m.isLoading).length,
+            messageCount: messages.filter((m) => !m.isLoading).length,
           };
           set((s) => ({
-            history: [session, ...s.history].slice(0, 15), // keep last 15
+            history: [session, ...s.history].slice(0, 20),
           }));
         }
-        set({
-          messages: [],
-          memory: defaultMemory,
-          isLoading: false,
-        });
+        set({ messages: [], memory: defaultMemory, isLoading: false, activeHistoryId: null });
+      },
+
+      renameSession: (id, name) => {
+        set((s) => ({
+          history: s.history.map((h) => (h.id === id ? { ...h, name } : h)),
+        }));
+      },
+
+      deleteSession: (id) => {
+        set((s) => ({ history: s.history.filter((h) => h.id !== id) }));
       },
     }),
     {
       name: "mednavigator-chat",
-      partialize: (state) => ({
-        messages: state.messages.slice(-20),
-        memory: state.memory,
-        history: state.history,
+      partialize: (s) => ({
+        messages: s.messages.slice(-20),
+        memory: s.memory,
+        history: s.history,
       }),
     }
   )

@@ -1,18 +1,13 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus,
-  Home,
-  Shield,
-  Building2,
-  MessageSquare,
-  Clock,
-  X,
-  ChevronRight,
+  Plus, Home, Shield, Building2, MessageSquare,
+  Clock, X, ChevronRight, Check, Pencil, Trash2,
 } from "lucide-react";
-import { useChatStore } from "@/lib/store/chat";
+import { useChatStore, type ChatSession } from "@/lib/store/chat";
 import { useI18n } from "@/lib/i18n";
 import { LanguageSwitcher } from "@/components/language-switcher";
 
@@ -22,17 +17,66 @@ interface ChatSidebarProps {
 
 export function ChatSidebar({ onClose }: ChatSidebarProps) {
   const { t } = useI18n();
-  const { history, reset } = useChatStore();
+  const { messages, history, reset, renameSession, deleteSession } = useChatStore();
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener("pointerdown", handler);
+    return () => window.removeEventListener("pointerdown", handler);
+  }, [contextMenu]);
+
+  const isRu = t("chat.title") === "Медицинская навигация";
 
   const navLinks = [
-    { href: "/", icon: Home, label: t("nav.howItWorks").split(" ")[0] === "Как" ? "Главная" : "Home" },
+    { href: "/", icon: Home, label: isRu ? "Главная" : "Home" },
     { href: "/safety", icon: Shield, label: t("nav.safety") },
     { href: "/clinics", icon: Building2, label: t("nav.clinics") },
   ];
 
+  // Derive current session from live messages
+  const firstUserMsg = messages.find((m) => m.role === "user" && !m.isLoading);
+  const currentSession = firstUserMsg
+    ? {
+        id: "current",
+        name: firstUserMsg.content.slice(0, 55),
+        preview: firstUserMsg.content.slice(0, 55),
+        timestamp: firstUserMsg.timestamp,
+        messageCount: messages.filter((m) => !m.isLoading).length,
+      }
+    : null;
+
   const handleNewChat = () => {
     reset();
     onClose?.();
+  };
+
+  const openContextMenu = (id: string, e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ id, x: (e as React.MouseEvent).clientX, y: (e as React.MouseEvent).clientY });
+  };
+
+  const startRename = (session: ChatSession) => {
+    setContextMenu(null);
+    setRenamingId(session.id);
+    setRenameValue(session.name);
+  };
+
+  const commitRename = () => {
+    if (renamingId && renameValue.trim()) {
+      renameSession(renamingId, renameValue.trim());
+    }
+    setRenamingId(null);
+  };
+
+  const handleDelete = (id: string) => {
+    setContextMenu(null);
+    deleteSession(id);
   };
 
   return (
@@ -40,28 +84,21 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
-            F
-          </div>
-          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-            MedNavigator
-          </span>
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">F</div>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">MedNavigator</span>
         </div>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 lg:hidden"
-          >
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 lg:hidden">
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* New chat button */}
+      {/* New chat */}
       <div className="px-3 pb-3">
         <button
           onClick={handleNewChat}
-          className="flex w-full items-center gap-2 rounded-xl border border-dashed border-blue-200 bg-blue-50/60 px-3 py-2.5 text-sm font-medium text-blue-600 transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/20 dark:text-blue-400 dark:hover:bg-blue-950/30"
+          className="flex w-full items-center gap-2 rounded-xl border border-dashed border-blue-200 bg-blue-50/60 px-3 py-2.5 text-sm font-medium text-blue-600 transition-all hover:border-blue-300 hover:bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/20 dark:text-blue-400"
         >
           <Plus className="h-4 w-4" />
           {t("chat.newChat")}
@@ -70,53 +107,55 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
 
       <div className="mx-3 border-t border-slate-100 dark:border-slate-800" />
 
-      {/* Chat history */}
+      {/* Sessions list */}
       <div className="flex-1 overflow-y-auto px-3 py-3">
+        <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-600">
+          {isRu ? "Чаты" : "Chats"}
+        </p>
+
+        {/* Current active chat */}
+        {currentSession && (
+          <SessionItem
+            session={currentSession}
+            isActive
+            renamingId={renamingId}
+            renameValue={renameValue}
+            onRenameChange={setRenameValue}
+            onRenameCommit={commitRename}
+            onContextMenu={(e) => openContextMenu(currentSession.id, e)}
+            onLongPress={(e) => openContextMenu(currentSession.id, e)}
+          />
+        )}
+
+        {/* Past sessions */}
         {history.length > 0 ? (
-          <div className="space-y-1">
-            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-600">
-              {t("chat.title") === "Медицинская навигация" ? "История" : "History"}
-            </p>
-            {history.map((session, i) => (
-              <motion.button
-                key={session.id}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.04 }}
-                onClick={() => {
-                  /* restore session (future) */
-                }}
-                className="group flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-slate-300 group-hover:text-blue-400 dark:text-slate-600" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs text-slate-600 dark:text-slate-300">
-                    {session.preview}
-                  </p>
-                  <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-600">
-                    <Clock className="h-3 w-3" />
-                    {formatTime(session.timestamp)}
-                    <span className="ml-1 opacity-60">·</span>
-                    <span className="opacity-60">{session.messageCount} msg</span>
-                  </p>
-                </div>
-                <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-200 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-700" />
-              </motion.button>
-            ))}
-          </div>
+          history.map((session, i) => (
+            <SessionItem
+              key={session.id}
+              session={session}
+              isActive={false}
+              index={i}
+              renamingId={renamingId}
+              renameValue={renameValue}
+              onRenameChange={setRenameValue}
+              onRenameCommit={commitRename}
+              onContextMenu={(e) => openContextMenu(session.id, e)}
+              onLongPress={(e) => openContextMenu(session.id, e)}
+            />
+          ))
         ) : (
-          <p className="px-2 text-xs text-slate-400 dark:text-slate-600 italic">
-            {t("chat.title") === "Медицинская навигация"
-              ? "История пуста — начните новый разговор"
-              : "No history — start a new conversation"}
-          </p>
+          !currentSession && (
+            <p className="px-2 text-xs italic text-slate-400 dark:text-slate-600">
+              {isRu ? "Начните разговор" : "Start a conversation"}
+            </p>
+          )
         )}
       </div>
 
       <div className="mx-3 border-t border-slate-100 dark:border-slate-800" />
 
-      {/* Navigation */}
-      <div className="px-3 py-3 space-y-1">
+      {/* Nav links */}
+      <div className="space-y-1 px-3 py-3">
         {navLinks.map(({ href, icon: Icon, label }) => (
           <Link
             key={href}
@@ -133,23 +172,145 @@ export function ChatSidebar({ onClose }: ChatSidebarProps) {
       <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-800">
         <LanguageSwitcher variant="pill" />
       </div>
+
+      {/* Context menu */}
+      <AnimatePresence>
+        {contextMenu && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.92 }}
+            transition={{ duration: 0.12 }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ position: "fixed", left: Math.min(contextMenu.x, window.innerWidth - 160), top: contextMenu.y, zIndex: 100 }}
+            className="min-w-[148px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800"
+          >
+            {contextMenu.id !== "current" && (
+              <>
+                <button
+                  onClick={() => {
+                    const s = history.find((h) => h.id === contextMenu.id);
+                    if (s) startRename(s);
+                  }}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {isRu ? "Переименовать" : "Rename"}
+                </button>
+                <button
+                  onClick={() => handleDelete(contextMenu.id)}
+                  className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {isRu ? "Удалить" : "Delete"}
+                </button>
+              </>
+            )}
+            {contextMenu.id === "current" && (
+              <button
+                onClick={() => setContextMenu(null)}
+                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-700"
+              >
+                {isRu ? "Текущий чат" : "Current chat"}
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-// Mobile sidebar overlay
-export function MobileSidebar({
-  open,
-  onClose,
+/* ─── Session item ─────────────────────────────────────────────────────────── */
+function SessionItem({
+  session,
+  isActive,
+  index = 0,
+  renamingId,
+  renameValue,
+  onRenameChange,
+  onRenameCommit,
+  onContextMenu,
+  onLongPress,
 }: {
-  open: boolean;
-  onClose: () => void;
+  session: { id: string; name: string; timestamp: number; messageCount: number };
+  isActive: boolean;
+  index?: number;
+  renamingId: string | null;
+  renameValue: string;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onLongPress: (e: React.PointerEvent) => void;
 }) {
+  const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pressTimerRef.current = setTimeout(() => onLongPress(e), 600);
+  };
+  const clearPress = () => {
+    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+  };
+
+  const isRenaming = renamingId === session.id;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.03 }}
+      onContextMenu={onContextMenu}
+      onPointerDown={handlePointerDown}
+      onPointerUp={clearPress}
+      onPointerLeave={clearPress}
+      className={`group relative flex items-start gap-2 rounded-xl px-3 py-2.5 cursor-pointer transition-colors ${
+        isActive
+          ? "bg-blue-50 dark:bg-blue-950/30"
+          : "hover:bg-slate-50 dark:hover:bg-slate-800"
+      }`}
+    >
+      <MessageSquare
+        className={`mt-0.5 h-4 w-4 shrink-0 ${
+          isActive ? "text-blue-500" : "text-slate-300 group-hover:text-blue-400 dark:text-slate-600"
+        }`}
+      />
+      <div className="min-w-0 flex-1">
+        {isRenaming ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => onRenameChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onRenameCommit(); if (e.key === "Escape") onRenameCommit(); }}
+              className="flex-1 rounded border border-blue-300 bg-white px-1.5 py-0.5 text-xs outline-none dark:border-blue-700 dark:bg-slate-800"
+            />
+            <button onClick={onRenameCommit} className="text-blue-500 hover:text-blue-700">
+              <Check className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <p className={`truncate text-xs ${isActive ? "font-medium text-blue-700 dark:text-blue-300" : "text-slate-600 dark:text-slate-300"}`}>
+            {session.name}
+          </p>
+        )}
+        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-600">
+          <Clock className="h-3 w-3" />
+          {formatTime(session.timestamp)}
+        </p>
+      </div>
+      {!isRenaming && (
+        <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-200 opacity-0 transition-opacity group-hover:opacity-100 dark:text-slate-700" />
+      )}
+    </motion.div>
+  );
+}
+
+/* ─── Mobile overlay ───────────────────────────────────────────────────────── */
+export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <AnimatePresence>
       {open && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -157,7 +318,6 @@ export function MobileSidebar({
             onClick={onClose}
             className="fixed inset-0 z-40 bg-black/40 lg:hidden"
           />
-          {/* Panel */}
           <motion.div
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}

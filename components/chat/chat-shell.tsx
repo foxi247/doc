@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PanelLeft, PanelRight, AlertTriangle } from "lucide-react";
+import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown } from "lucide-react";
 import { ChatInput } from "./chat-input";
 import { ChatMessageBubble } from "./chat-message";
 import { ContextPanel } from "./context-panel";
@@ -15,35 +15,75 @@ import type { ChatResponse } from "@/lib/ai/chat-types";
 export function ChatShell() {
   const { t, ta, locale } = useI18n();
   const {
-    messages,
-    memory,
-    isLoading,
-    addMessage,
-    updateLastAssistantMessage,
-    updateMemory,
-    markMessageRead,
-    setLoading,
+    messages, memory, isLoading,
+    addMessage, updateLastAssistantMessage, updateMemory,
+    markMessageRead, setLoading,
   } = useChatStore();
 
   const [input, setInput] = useState("");
   const [showContext, setShowContext] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(true); // desktop default
+  const [showSidebar, setShowSidebar] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // Auto-scroll
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll tracking
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distFromBottom > 120);
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
+
+  // Auto-scroll when messages change (only if already near bottom)
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distFromBottom < 200) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
-  // Greeting on first load
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setShowScrollBtn(false);
+  };
+
+  // Greeting
   useEffect(() => {
     if (messages.length === 0 && !hasGreeted) {
       setHasGreeted(true);
       addMessage({ role: "assistant", content: t("chat.greeting") });
     }
   }, [messages.length, hasGreeted, addMessage, t]);
+
+  // Copy chat
+  const copyChat = useCallback(async () => {
+    const isRu = locale === "ru";
+    const text = messages
+      .filter((m) => !m.isLoading && m.content.trim())
+      .map((m) => `${m.role === "user" ? (isRu ? "Вы" : "You") : "MedNavigator"}: ${m.content}`)
+      .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      // fallback: select the text
+    }
+  }, [messages, locale]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -54,11 +94,12 @@ export function ChatShell() {
       addMessage({ role: "assistant", content: "", isLoading: true });
       setLoading(true);
 
+      // Scroll to show loading indicator
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
       try {
         const currentMessages = useChatStore.getState().messages;
-        const apiMessages = selectApiMessages(
-          currentMessages.filter((m) => !m.isLoading)
-        );
+        const apiMessages = selectApiMessages(currentMessages.filter((m) => !m.isLoading));
 
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -71,26 +112,25 @@ export function ChatShell() {
         });
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
         const data: ChatResponse = await response.json();
 
         updateLastAssistantMessage({
           content: data.message,
           isLoading: false,
-          isNew: true, // triggers typewriter
+          isNew: true,
           urgency: data.urgency,
           recommendedSpecialist: data.recommendedSpecialist ?? undefined,
           followUpQuestions: data.followUpQuestions,
           recommendations: data.recommendations,
         });
 
-        if (data.sessionMemory) {
-          updateMemory(data.sessionMemory);
-        }
+        if (data.sessionMemory) updateMemory(data.sessionMemory);
       } catch (err) {
-        console.error("[ChatShell] send failed:", err);
+        console.error("[ChatShell]", err);
         updateLastAssistantMessage({
-          content: t("chat.greeting"),
+          content: locale === "ru"
+            ? "Извините, произошла ошибка. Попробуйте ещё раз."
+            : "Sorry, an error occurred. Please try again.",
           isLoading: false,
           isNew: true,
         });
@@ -98,25 +138,18 @@ export function ChatShell() {
         setLoading(false);
       }
     },
-    [isLoading, addMessage, updateLastAssistantMessage, updateMemory, setLoading, locale, t]
+    [isLoading, addMessage, updateLastAssistantMessage, updateMemory, setLoading, locale]
   );
 
-  const handleOptionSelect = useCallback(
-    (_questionId: string, value: string) => sendMessage(value),
-    [sendMessage]
-  );
-
-  const handleStarterSelect = useCallback(
-    (starter: string) => sendMessage(starter),
-    [sendMessage]
-  );
+  const handleOptionSelect = useCallback((_qId: string, value: string) => sendMessage(value), [sendMessage]);
+  const handleStarterSelect = useCallback((s: string) => sendMessage(s), [sendMessage]);
 
   const starters = ta("chat.quickStarters");
   const showStarters = messages.length <= 1 && !isLoading;
 
   return (
     <div className="flex h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* ── Desktop sidebar ─────────────────────────────── */}
+      {/* Desktop sidebar */}
       <AnimatePresence initial={false}>
         {showSidebar && (
           <motion.aside
@@ -132,26 +165,20 @@ export function ChatShell() {
         )}
       </AnimatePresence>
 
-      {/* ── Mobile sidebar overlay ───────────────────────── */}
-      <MobileSidebar
-        open={mobileSidebarOpen}
-        onClose={() => setMobileSidebarOpen(false)}
-      />
+      {/* Mobile sidebar */}
+      <MobileSidebar open={mobileSidebarOpen} onClose={() => setMobileSidebarOpen(false)} />
 
-      {/* ── Main column ─────────────────────────────────── */}
+      {/* Main column */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-3 dark:border-slate-800 dark:bg-slate-900">
           <div className="flex items-center gap-2">
-            {/* Mobile hamburger */}
             <button
               onClick={() => setMobileSidebarOpen(true)}
               className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 lg:hidden"
             >
               <PanelLeft className="h-4 w-4" />
             </button>
-
-            {/* Desktop sidebar toggle */}
             <button
               onClick={() => setShowSidebar((v) => !v)}
               className={`hidden h-8 w-8 items-center justify-center rounded-xl transition-colors lg:flex ${
@@ -162,32 +189,41 @@ export function ChatShell() {
             >
               <PanelLeft className="h-4 w-4" />
             </button>
-
             <div>
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {t("chat.title")}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                {t("chat.subtitle")}
-              </p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("chat.title")}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{t("chat.subtitle")}</p>
             </div>
           </div>
 
-          {/* Context panel toggle (desktop) */}
-          <button
-            onClick={() => setShowContext((v) => !v)}
-            className={`hidden h-8 w-8 items-center justify-center rounded-xl transition-colors lg:flex ${
-              showContext
-                ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
-                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-            }`}
-            title="Session context"
-          >
-            <PanelRight className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Copy chat button */}
+            <button
+              onClick={copyChat}
+              title={locale === "ru" ? "Скопировать чат" : "Copy chat"}
+              className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+            >
+              {copied ? (
+                <Check className="h-4 w-4 text-green-500" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </button>
+
+            {/* Context panel toggle */}
+            <button
+              onClick={() => setShowContext((v) => !v)}
+              className={`hidden h-8 w-8 items-center justify-center rounded-xl transition-colors lg:flex ${
+                showContext
+                  ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+              }`}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {/* Emergency notice */}
+        {/* Emergency bar */}
         <div className="flex items-center gap-2 bg-red-50 px-4 py-2 dark:bg-red-950/30">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
           <p className="text-xs text-red-600 dark:text-red-400">{t("chat.emergency")}</p>
@@ -195,9 +231,12 @@ export function ChatShell() {
 
         {/* Messages + context */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Messages */}
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Scroll area */}
+          <div className="relative flex flex-1 flex-col overflow-hidden">
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+            >
               <AnimatePresence initial={false}>
                 {messages.map((msg, i) => (
                   <ChatMessageBubble
@@ -210,7 +249,6 @@ export function ChatShell() {
                 ))}
               </AnimatePresence>
 
-              {/* Quick starters on empty chat */}
               {showStarters && starters.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
@@ -218,15 +256,28 @@ export function ChatShell() {
                   exit={{ opacity: 0 }}
                   className="pl-9"
                 >
-                  <QuickStarterChips
-                    starters={starters}
-                    onSelect={handleStarterSelect}
-                  />
+                  <QuickStarterChips starters={starters} onSelect={handleStarterSelect} />
                 </motion.div>
               )}
 
               <div ref={messagesEndRef} />
             </div>
+
+            {/* Scroll-to-bottom button */}
+            <AnimatePresence>
+              {showScrollBtn && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.8, y: 8 }}
+                  transition={{ duration: 0.18 }}
+                  onClick={scrollToBottom}
+                  className="absolute bottom-24 right-4 flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-md border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                >
+                  <ChevronDown className="h-5 w-5" />
+                </motion.button>
+              )}
+            </AnimatePresence>
 
             {/* Input */}
             <ChatInput
@@ -237,7 +288,7 @@ export function ChatShell() {
             />
           </div>
 
-          {/* Context panel — desktop only */}
+          {/* Context panel */}
           <AnimatePresence>
             {showContext && (
               <motion.aside
