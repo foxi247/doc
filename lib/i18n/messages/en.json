@@ -1,0 +1,89 @@
+{
+  "nav": {
+    "product": "Product",
+    "howItWorks": "How it works",
+    "safety": "Safety",
+    "clinics": "For Clinics",
+    "chat": "Chat",
+    "getStarted": "Start chat",
+    "signIn": "Sign in"
+  },
+  "hero": {
+    "badge": "AI Medical Navigation",
+    "headline": "Describe your symptoms.\nGet a clear next step.",
+    "subheadline": "MedNavigator AI guides you to the right specialist — quickly, safely, in your language.",
+    "ctaStart": "Start chatting",
+    "ctaHow": "How it works",
+    "disclaimer": "Not a diagnosis · Always consult a doctor",
+    "chips": ["Headache", "Chest pain", "Fatigue", "Stomach pain"],
+    "chatGreeting": "Hello! I'm your medical navigation assistant. Describe your symptoms and I'll help you find the right next step.",
+    "chatPlaceholder": "Describe your symptoms...",
+    "chatDisclaimer": "Not a diagnosis. For emergencies, call 112."
+  },
+  "chat": {
+    "title": "Medical Navigation",
+    "subtitle": "AI-powered symptom guidance",
+    "newChat": "New chat",
+    "thinking": "Analyzing...",
+    "inputPlaceholder": "Describe your symptoms or ask a question...",
+    "send": "Send",
+    "uploadFile": "Attach",
+    "disclaimer": "This is not a diagnosis. Always consult a licensed physician.",
+    "emergency": "For medical emergencies, call emergency services immediately.",
+    "urgency": {
+      "high": "Urgent",
+      "medium": "See doctor soon",
+      "low": "Routine visit"
+    },
+    "specialist": "Suggested specialist",
+    "greeting": "Hello! I'm your medical navigation assistant.\n\nDescribe your symptoms and I'll help you understand what kind of specialist you might need and what to do next.\n\nWhat's bothering you today?",
+    "context": {
+      "title": "Session context",
+      "symptoms": "Symptoms noted",
+      "location": "Location",
+      "files": "Files",
+      "specialist": "Specialist direction",
+      "urgency": "Urgency",
+      "empty": "Building context as we talk..."
+    },
+    "quickStarters": ["Headache", "Chest pain", "Fatigue", "Stomach pain", "Back pain"],
+    "orWriteOwn": "or write your own answer"
+  },
+  "recommendations": {
+    "hospitals": "Suggested hospitals",
+    "doctors": "Suggested doctors",
+    "disclaimer": "Informational suggestions only. Always verify details directly.",
+    "verify": "Verify",
+    "callPhone": "Call",
+    "openSite": "Website",
+    "getDirections": "Directions",
+    "verifyNote": "Verify availability before visiting"
+  },
+  "safety": {
+    "emergency": "If this may be a medical emergency, contact local emergency services immediately.",
+    "notADoctor": "MedNavigator AI is not a licensed medical device and does not provide diagnoses or prescriptions.",
+    "disclaimer": "Always consult a qualified healthcare professional for medical advice."
+  },
+  "howItWorks": {
+    "title": "How it works",
+    "subtitle": "Three steps to clarity",
+    "steps": [
+      { "title": "Describe symptoms", "desc": "Tell the assistant what you're feeling, in your own words." },
+      { "title": "Answer follow-ups", "desc": "Quick structured questions help narrow down what's relevant." },
+      { "title": "Get guided next step", "desc": "Find the right specialist, clinic, or action to take." }
+    ]
+  },
+  "footer": {
+    "tagline": "Smarter navigation to the care you need.",
+    "disclaimer": "MedNavigator AI does not provide medical diagnoses, treatment plans, or prescriptions. Always consult a licensed healthcare provider for medical advice. In an emergency, contact local emergency services immediately.",
+    "copyright": "MedNavigator AI. Not a medical device.",
+    "links": {
+      "product": "Product",
+      "safety": "Safety",
+      "clinics": "For Clinics",
+      "contact": "Contact",
+      "privacy": "Privacy",
+      "terms": "Terms"
+    }
+  }
+}
