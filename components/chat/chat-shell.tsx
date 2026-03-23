@@ -55,54 +55,6 @@ export function ChatShell() {
     exportChatToPdf(messages, locale);
   }, [messages, locale]);
 
-  // Image/file upload — reads image, calls vision API, injects text into chat
-  const handleFileAttach = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  const handleFileChange = useCallback(
-    async (e: ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith("image/")) return;
-
-      setImageAnalyzing(true);
-      try {
-        const base64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => {
-            const result = ev.target?.result as string;
-            resolve(result.split(",")[1]); // strip data URL prefix
-          };
-          reader.readAsDataURL(file);
-        });
-
-        const res = await fetch("/api/vision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ imageBase64: base64, mimeType: file.type, language: locale }),
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        if (data.text) {
-          const prefix =
-            locale === "ru"
-              ? `[Загружен медицинский документ: ${file.name}]\n\n${data.text}`
-              : `[Uploaded medical document: ${file.name}]\n\n${data.text}`;
-          sendMessage(prefix);
-        }
-      } catch (err) {
-        console.error("[FileUpload]", err);
-      } finally {
-        setImageAnalyzing(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      }
-    },
-    [locale, sendMessage]
-  );
-
   // Scroll tracking
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -220,6 +172,54 @@ export function ChatShell() {
 
   const handleOptionSelect = useCallback((_qId: string, value: string) => sendMessage(value), [sendMessage]);
   const handleStarterSelect = useCallback((s: string) => sendMessage(s), [sendMessage]);
+
+  // Image/file upload — reads image, calls vision API, injects extracted text into chat
+  const handleFileAttach = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) return;
+
+      setImageAnalyzing(true);
+      try {
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const result = ev.target?.result as string;
+            resolve(result.split(",")[1]);
+          };
+          reader.readAsDataURL(file);
+        });
+
+        const res = await fetch("/api/vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64, mimeType: file.type, language: locale }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.text) {
+          const prefix =
+            locale === "ru"
+              ? `[Загружен медицинский документ: ${file.name}]\n\n${data.text}`
+              : `[Uploaded medical document: ${file.name}]\n\n${data.text}`;
+          sendMessage(prefix);
+        }
+      } catch (err) {
+        console.error("[FileUpload]", err);
+      } finally {
+        setImageAnalyzing(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [locale, sendMessage]
+  );
 
   const starters = ta("chat.quickStarters");
   const showStarters = messages.length <= 1 && !isLoading;
