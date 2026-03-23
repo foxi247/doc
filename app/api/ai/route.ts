@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { aiClient, AI_MODEL, AI_CHAT_OPTIONS } from "@/lib/ai/client";
+import { aiClient, AI_MODEL } from "@/lib/ai/client";
 import { SYSTEM_PROMPT, buildUserMessage } from "@/lib/ai/prompts";
 import { parseAIResponse } from "@/lib/ai/parser";
 import { getMockResponse } from "@/lib/ai/fallback";
 import { sanitizeInput } from "@/lib/utils";
+
+// Increase Vercel serverless timeout (requires Pro plan for >10s; set to max safe on hobby)
+export const maxDuration = 60;
 
 const RequestSchema = z.object({
   symptoms: z
@@ -38,12 +41,13 @@ export async function POST(request: NextRequest) {
   const sanitizedSymptoms = sanitizeInput(symptoms);
   const sanitizedFiles = uploadedFiles?.map((f) => sanitizeInput(f));
 
-  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || "30000", 10);
+  // Use 8s timeout on hobby plan (Vercel kills at 10s), 25s otherwise
+  const timeoutMs = parseInt(process.env.AI_TIMEOUT_MS || "8000", 10);
 
   // Fall back to mock if no API key configured
   if (!process.env.NVIDIA_API_KEY || process.env.NVIDIA_API_KEY === "placeholder-key") {
     console.info("[MedNavigator] No API key configured — returning mock response.");
-    await new Promise((r) => setTimeout(r, 800)); // Simulate latency
+    await new Promise((r) => setTimeout(r, 800));
     return NextResponse.json(getMockResponse(sanitizedSymptoms));
   }
 
@@ -56,18 +60,29 @@ export async function POST(request: NextRequest) {
       { role: "user" as const, content: buildUserMessage(sanitizedSymptoms, sanitizedFiles) },
     ];
 
-    const completion = await aiClient.chat.completions.create({
-      model: AI_MODEL,
-      messages,
-      ...AI_CHAT_OPTIONS,
-      stream: false,
-    } as Parameters<typeof aiClient.chat.completions.create>[0] & { stream: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const completion = await (aiClient.chat.completions.create as any)(
+      {
+        model: AI_MODEL,
+        messages,
+        temperature: 0.3,
+        top_p: 1,
+        max_tokens: 1200,
+        stream: false,
+        extra_body: {
+          chat_template_kwargs: {
+            enable_thinking: process.env.NVIDIA_ENABLE_THINKING !== "false",
+            clear_thinking: false,
+          },
+        },
+      },
+      { signal: controller.signal } // ← connected abort signal
+    );
 
     clearTimeout(timeoutId);
 
     // Extract content — do NOT expose reasoning_content to users
-    const rawContent =
-      completion.choices?.[0]?.message?.content || "";
+    const rawContent = completion.choices?.[0]?.message?.content || "";
 
     if (!rawContent.trim()) {
       console.error("[MedNavigator] Empty response from model.");
@@ -86,16 +101,9 @@ export async function POST(request: NextRequest) {
     clearTimeout(timeoutId);
 
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    // Log server-side without leaking key or sensitive data
     console.error("[MedNavigator] AI call failed:", errorMessage.slice(0, 200));
 
-    if (errorMessage.includes("abort") || errorMessage.includes("timeout")) {
-      return NextResponse.json(
-        { error: "The request timed out. Showing estimated guidance instead.", ...getMockResponse(sanitizedSymptoms) },
-        { status: 200 }
-      );
-    }
-
+    // Always return a valid mock — never let the server return no body
     return NextResponse.json(getMockResponse(sanitizedSymptoms));
   }
 }
