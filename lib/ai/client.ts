@@ -4,22 +4,27 @@ if (!process.env.NVIDIA_API_KEY && process.env.NODE_ENV === "production") {
   console.warn("[MedNavigator] NVIDIA_API_KEY is not set. Falling back to mock responses.");
 }
 
+const NVIDIA_BASE_URL = process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1";
+const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || "placeholder-key";
+
 export const aiClient = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY || "placeholder-key",
-  baseURL: process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
+  apiKey: NVIDIA_API_KEY,
+  baseURL: NVIDIA_BASE_URL,
 });
 
-export const AI_MODEL = process.env.NVIDIA_MODEL || "z-ai/glm4.7";
+// Main conversational model: DeepSeek v3.2 with extended reasoning
+export const AI_MODEL = process.env.NVIDIA_MODEL || "deepseek-ai/deepseek-v3.2";
+
+// Vision model: Mistral Large for reading medical images and documents
+export const VISION_MODEL = "mistralai/mistral-large-3-675b-instruct-2512";
 
 export const AI_CHAT_OPTIONS = {
-  temperature: 0.3,
-  top_p: 1,
-  max_tokens: 1200,
-  // Preserve NVIDIA-specific thinking parameters from reference implementation
+  temperature: 1,
+  top_p: 0.95,
+  max_tokens: 2048,
   extra_body: {
     chat_template_kwargs: {
-      enable_thinking: process.env.NVIDIA_ENABLE_THINKING !== "false",
-      clear_thinking: false,
+      thinking: process.env.NVIDIA_ENABLE_THINKING !== "false",
     },
   },
 } as const;

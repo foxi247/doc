@@ -69,14 +69,13 @@ export async function POST(request: NextRequest) {
           { role: "system", content: systemPrompt },
           ...sanitizedMessages,
         ],
-        temperature: 0.4,
-        top_p: 1,
-        max_tokens: 1200,
+        temperature: 1,
+        top_p: 0.95,
+        max_tokens: 2048,
         stream: false,
         extra_body: {
           chat_template_kwargs: {
-            enable_thinking: thinkingEnabled,
-            clear_thinking: false,
+            thinking: thinkingEnabled,
           },
         },
       },
@@ -318,7 +317,14 @@ function buildMockResponse(
   const allMessages = messages;
   const prevAiMessages = allMessages.filter((m) => m.role === "assistant");
   const lastAiText = prevAiMessages[prevAiMessages.length - 1]?.content ?? "";
-  const prevWasCityQuestion = lastAiText.toLowerCase().includes("город") || lastAiText.toLowerCase().includes("city") || lastAiText.toLowerCase().includes("где вы");
+  // Use specific city-question phrases only — avoid matching "городскую поликлинику" etc.
+  const prevWasCityQuestion = (
+    lastAiText.toLowerCase().includes("в каком городе") ||
+    lastAiText.toLowerCase().includes("укажите ваш город") ||
+    lastAiText.toLowerCase().includes("где вы находитесь") ||
+    lastAiText.toLowerCase().includes("what city are you in") ||
+    lastAiText.toLowerCase().includes("your city")
+  );
 
   const cityResult = extractCity(lastUserText, prevWasCityQuestion);
   const effectiveCity = cityResult
@@ -521,7 +527,9 @@ function buildSpecialistQA(
   const symStr = symptoms.slice(0, 4).join(isRu ? ", " : ", ");
 
   if (lower.includes("причин") || lower.includes("почему") || lower.includes("что это") ||
-      lower.includes("causes") || lower.includes("why") || lower.includes("what could")) {
+      lower.includes("диагноз") || lower.includes("diagnosis") || lower.includes("чем болею") ||
+      lower.includes("causes") || lower.includes("why") || lower.includes("what could") ||
+      lower.includes("относит") || lower.includes("может быть") || lower.includes("болезн")) {
     return {
       message: buildCausesMessage(isRu, symptoms),
       urgency: (memory.urgency as "low" | "medium" | "high") ?? "medium",
@@ -531,7 +539,8 @@ function buildSpecialistQA(
     };
   }
 
-  if (lower.includes("взять") || lower.includes("подготов") || lower.includes("prepare") || lower.includes("bring")) {
+  if (lower.includes("взять") || lower.includes("подготов") || lower.includes("prepare") || lower.includes("bring") ||
+      lower.includes("взял") || lower.includes("нести") || lower.includes("документ")) {
     return {
       message: isRu
         ? `Перед визитом к ${specialist}:\n\n• Записать все симптомы: ${symStr}\n• Даты начала каждого симптома\n• Принимаемые лекарства (если есть)\n• Результаты анализов (если есть)\n• Паспорт и медицинский полис`
@@ -542,20 +551,42 @@ function buildSpecialistQA(
     };
   }
 
-  // Default follow-up
+  if (lower.includes("как") && (lower.includes("лечить") || lower.includes("лечен") || lower.includes("treat") || lower.includes("cure"))) {
+    return {
+      message: isRu
+        ? `Лечение при симптомах (${symStr}) зависит от точного диагноза, который поставит врач после осмотра.\n\nОбщие рекомендации до визита к ${specialist}:\n• Постельный режим при выраженной слабости\n• Следите за температурой — при повышении свыше 38.5°C принимайте жаропонижающее\n• Пейте больше жидкости\n• Не занимайтесь самолечением без консультации\n\n⚠️ Конкретное лечение назначает только врач.`
+        : `Treatment for your symptoms (${symStr}) depends on the exact diagnosis from a doctor's examination.\n\nGeneral recommendations before seeing the ${specialist}:\n• Rest if feeling weak\n• Monitor temperature — take fever reducer if above 38.5°C\n• Stay hydrated\n• Avoid self-medication\n\n⚠️ Specific treatment must be prescribed by a doctor.`,
+      urgency: "low", recommendedSpecialist: specialist,
+      followUpQuestions: [],
+      sessionMemory: memory, requestLocation: false, disclaimer,
+    };
+  }
+
+  if (lower.includes("спасибо") || lower.includes("thank") || lower.includes("понятно") || lower.includes("ясно") || lower.includes("всё") || lower.includes("ладно")) {
+    return {
+      message: isRu
+        ? `Пожалуйста! Желаю вам скорейшего выздоровления. Не откладывайте визит к ${specialist} — чем раньше обратитесь, тем лучше.\n\nЕсли появятся новые симптомы или ухудшение — сразу обратитесь к врачу.\n\nЗаботьтесь о себе! 🌱`
+        : `You're welcome! I hope you feel better soon. Don't delay seeing the ${specialist} — early consultation is always best.\n\nIf symptoms worsen, seek medical attention promptly.\n\nTake care! 🌱`,
+      urgency: "low", recommendedSpecialist: specialist,
+      followUpQuestions: [],
+      sessionMemory: memory, requestLocation: false, disclaimer,
+    };
+  }
+
+  // Default: answer naturally based on what was asked
   return {
     message: isRu
-      ? `Спасибо за информацию. Основываясь на описанных симптомах (${symStr}), рекомендую не откладывать визит к ${specialist}.\n\nЕсть ли другие вопросы?`
-      : `Thank you. Based on your symptoms (${symStr}), I recommend seeing the ${specialist} soon.\n\nAny other questions?`,
+      ? `Исходя из ваших симптомов (${symStr}), рекомендую не откладывать консультацию у ${specialist}.\n\nЯ могу помочь с:\n• Возможными причинами симптомов\n• Что взять на приём\n• Как подготовиться к визиту\n\nЧто именно вас интересует?`
+      : `Based on your symptoms (${symStr}), I recommend seeing a ${specialist} soon.\n\nI can help with:\n• Possible causes of your symptoms\n• What to bring to the appointment\n• How to prepare for your visit\n\nWhat would you like to know?`,
     urgency: (memory.urgency as "low" | "medium" | "high") ?? "medium",
     recommendedSpecialist: specialist,
     followUpQuestions: [{
       id: "final-help",
-      question: isRu ? "Что ещё могу помочь?" : "How else can I help?",
+      question: isRu ? "Что вас интересует?" : "What would you like to know?",
       type: "single-choice" as const,
       options: isRu
-        ? ["Возможные причины", "Что взять к врачу", "Всё понятно, спасибо"]
-        : ["Possible causes", "What to bring to doctor", "All clear, thanks"],
+        ? ["Возможные диагнозы", "Что взять к врачу", "Как лечится", "Всё понятно, спасибо"]
+        : ["Possible diagnoses", "What to bring to doctor", "How is it treated", "All clear, thanks"],
     }],
     sessionMemory: memory, requestLocation: false, disclaimer,
   };

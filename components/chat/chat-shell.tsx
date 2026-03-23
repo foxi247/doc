@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, ChangeEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PanelLeft, PanelRight, AlertTriangle, Copy, Check, ChevronDown, FileDown, Volume2, VolumeX } from "lucide-react";
 import { ChatInput } from "./chat-input";
@@ -33,6 +33,8 @@ export function ChatShell() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageAnalyzing, setImageAnalyzing] = useState(false);
 
   const [voiceMode, setVoiceMode] = useState(false);
   const { speak: speakTTS, stop: stopTTS } = useSpeechOutput();
@@ -52,6 +54,54 @@ export function ChatShell() {
   const exportPdf = useCallback(() => {
     exportChatToPdf(messages, locale);
   }, [messages, locale]);
+
+  // Image/file upload — reads image, calls vision API, injects text into chat
+  const handleFileAttach = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith("image/")) return;
+
+      setImageAnalyzing(true);
+      try {
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            const result = ev.target?.result as string;
+            resolve(result.split(",")[1]); // strip data URL prefix
+          };
+          reader.readAsDataURL(file);
+        });
+
+        const res = await fetch("/api/vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: base64, mimeType: file.type, language: locale }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.text) {
+          const prefix =
+            locale === "ru"
+              ? `[Загружен медицинский документ: ${file.name}]\n\n${data.text}`
+              : `[Uploaded medical document: ${file.name}]\n\n${data.text}`;
+          sendMessage(prefix);
+        }
+      } catch (err) {
+        console.error("[FileUpload]", err);
+      } finally {
+        setImageAnalyzing(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    },
+    [locale, sendMessage]
+  );
 
   // Scroll tracking
   const handleScroll = useCallback(() => {
@@ -333,12 +383,22 @@ export function ChatShell() {
               )}
             </AnimatePresence>
 
+            {/* Hidden file input for image upload */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+
             {/* Input */}
             <ChatInput
               value={input}
               onChange={setInput}
               onSend={() => sendMessage(input)}
-              isLoading={isLoading}
+              onFileAttach={handleFileAttach}
+              isLoading={isLoading || imageAnalyzing}
               isListening={isListening}
               voiceSupported={voiceSupported}
               onVoiceToggle={toggleVoice}
