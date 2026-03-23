@@ -18,17 +18,27 @@ export interface ChatMessage {
     doctors: DoctorResult[];
   };
   isLoading?: boolean;
+  isNew?: boolean; // triggers typewriter animation
+}
+
+export interface ChatSession {
+  id: string;
+  preview: string; // first user message snippet
+  timestamp: number;
+  messageCount: number;
 }
 
 interface ChatStore {
   messages: ChatMessage[];
   memory: SessionMemory;
   isLoading: boolean;
+  history: ChatSession[]; // past sessions
   addMessage: (msg: Omit<ChatMessage, "id" | "timestamp">) => string;
   updateLastAssistantMessage: (updates: Partial<ChatMessage>) => void;
+  markMessageRead: (id: string) => void;
   updateMemory: (updates: Partial<SessionMemory>) => void;
   setLoading: (loading: boolean) => void;
-  reset: () => void;
+  reset: () => void; // saves current session to history
 }
 
 const defaultMemory: SessionMemory = {
@@ -45,6 +55,7 @@ export const useChatStore = create<ChatStore>()(
       messages: [],
       memory: defaultMemory,
       isLoading: false,
+      history: [],
 
       addMessage: (msg) => {
         const id = crypto.randomUUID();
@@ -70,6 +81,14 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
+      markMessageRead: (id) => {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === id ? { ...m, isNew: false } : m
+          ),
+        }));
+      },
+
       updateMemory: (updates) => {
         set((state) => ({
           memory: {
@@ -90,24 +109,40 @@ export const useChatStore = create<ChatStore>()(
 
       setLoading: (loading) => set({ isLoading: loading }),
 
-      reset: () =>
+      reset: () => {
+        const state = get();
+        const userMsgs = state.messages.filter((m) => m.role === "user" && !m.isLoading);
+        // Save current session to history if it has user messages
+        if (userMsgs.length > 0) {
+          const preview = userMsgs[0].content.slice(0, 60);
+          const session: ChatSession = {
+            id: crypto.randomUUID(),
+            preview,
+            timestamp: Date.now(),
+            messageCount: state.messages.filter((m) => !m.isLoading).length,
+          };
+          set((s) => ({
+            history: [session, ...s.history].slice(0, 15), // keep last 15
+          }));
+        }
         set({
           messages: [],
           memory: defaultMemory,
           isLoading: false,
-        }),
+        });
+      },
     }),
     {
       name: "mednavigator-chat",
       partialize: (state) => ({
-        messages: state.messages.slice(-20), // Keep last 20 messages
+        messages: state.messages.slice(-20),
         memory: state.memory,
+        history: state.history,
       }),
     }
   )
 );
 
-// Selector for API messages format (exclude loading placeholders)
 export function selectApiMessages(messages: ChatMessage[]) {
   return messages
     .filter((m) => !m.isLoading && m.content.trim())
